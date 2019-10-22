@@ -242,6 +242,18 @@ class BertSelfAttention(nn.Module):
         """
         fusion_layer=torch.cat([context_layer,align_layer,context_layer-align_layer,context_layer*align_layer],dim=-1)
         context_layer=self.linear_transform(fusion_layer)
+        """
+        add for test
+        """
+
+        #align_agg=torch.matmul(context_layer,context_layer.transpose(-1,-2))
+        #align_agg = align_agg / math.sqrt(self.attention_head_size)
+
+        #if attention_mask is not None:
+        #    align_agg = align_agg + attention_mask
+        #align_agg_score=nn.Softmax(dim=-1)(align_agg)
+
+        #context_layer = torch.matmul(align_agg_score, context_layer)
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
