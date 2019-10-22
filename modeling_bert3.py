@@ -193,7 +193,7 @@ class BertSelfAttention(nn.Module):
         self.key = nn.Linear(config.hidden_size, self.all_head_size)
         self.value = nn.Linear(config.hidden_size, self.all_head_size)
 
-        self.linear_transform=nn.Linear(self.attention_head_size*2, self.attention_head_size,bias=False)
+        self.linear_transform=nn.Linear(self.attention_head_size*2, self.attention_head_size)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
@@ -249,14 +249,14 @@ class BertSelfAttention(nn.Module):
         add for test
         """
 
-        #align_agg=torch.matmul(context_layer,context_layer.transpose(-1,-2))
-        #align_agg = align_agg / math.sqrt(self.attention_head_size)
+        align_agg=torch.matmul(context_layer,context_layer.transpose(-1,-2))
+        align_agg = align_agg / math.sqrt(self.attention_head_size)
 
-        #if attention_mask is not None:
-        #    align_agg = align_agg + attention_mask
-        #align_agg_score=nn.Softmax(dim=-1)(align_agg)
+        if attention_mask is not None:
+            align_agg = align_agg + attention_mask
+        align_agg_score=nn.Softmax(dim=-1)(align_agg)
 
-        #context_layer = torch.matmul(align_agg_score, context_layer)
+        context_layer = torch.matmul(align_agg_score, context_layer)
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
