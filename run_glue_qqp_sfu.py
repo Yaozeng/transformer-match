@@ -273,10 +273,10 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="QQP", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_qqp_sfu", type=str,
+    parser.add_argument("--output_dir", default="output_qqp_sfu_128", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
     ## Other parameters
-    parser.add_argument("--max_seq_length", default=65, type=int,
+    parser.add_argument("--max_seq_length", default=128, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--do_train", default=True,
@@ -290,7 +290,7 @@ def main():
 
     parser.add_argument("--per_gpu_train_batch_size", default=64, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=128, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=96, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
