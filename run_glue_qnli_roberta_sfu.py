@@ -32,16 +32,15 @@ from tqdm import tqdm, trange
 from optimization import AdamW, WarmupLinearSchedule
 
 from metrics import glue_compute_metrics as compute_metrics
-from configuration_bert import BertConfig
-from modeling_bert4 import BertForSequenceClassification
-from tokenization_bert import BertTokenizer
+from configuration_roberta import RobertaConfig
+from modeling_roberta import RobertaForSequenceClassification
+from tokenization_roberta import RobertaTokenizer
 from processors.glue2 import glue_output_modes as output_modes
 from processors.glue2 import glue_processors as processors
 from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
 from file_utils import WEIGHTS_NAME
 
 logger = logging.getLogger(__name__)
-
 
 def set_seed(args):
     random.seed(args.seed)
@@ -68,8 +67,8 @@ def train(args, train_dataset, model, tokenizer):
     save_steps=int(args.save_steps*t_total)
     # Prepare optimizer and schedule (linear warmup and decay)
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if 'classifier' not in n and 'linear_r' not in n and 'linear_g' not in n]},
-        {'params': [p for n, p in model.named_parameters() if 'classifier' in n or 'linear_r' in n or 'linear_g' in n], 'lr': 2e-3}
+        {'params': [p for n, p in model.named_parameters() if 'classifier' not in n and 'linear_transform' not in n]},
+        {'params': [p for n, p in model.named_parameters() if 'classifier' in n or 'linear_transform' in n], 'lr': 2e-3}
     ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = WarmupLinearSchedule(optimizer, warmup_steps=warm_up_steps, t_total=t_total)
@@ -87,9 +86,9 @@ def train(args, train_dataset, model, tokenizer):
     logger.info("  Total optimization steps = %d", t_total)
 
     global_step = 0
+    tr_loss, logging_loss = 0.0, 0.0
     max_acc=0
     max_f1=0
-    tr_loss, logging_loss = 0.0, 0.0
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
@@ -98,16 +97,16 @@ def train(args, train_dataset, model, tokenizer):
         for step, batch in enumerate(epoch_iterator):
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
-            inputs = {'input_ids': batch[0],
+            inputs = {'input_ids':      batch[0],
                       'attention_mask': batch[1],
                       'align_mask': batch[2],
-                      'labels': batch[4]}
-            inputs['token_type_ids'] = batch[3]
+                      'labels':         batch[4]}
+            inputs['token_type_ids'] = None
             outputs = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
 
             if args.n_gpu > 1:
-                loss = loss.mean()  # mean() to average on multi-gpu parallel training
+                loss = loss.mean() # mean() to average on multi-gpu parallel training
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
@@ -125,16 +124,16 @@ def train(args, train_dataset, model, tokenizer):
                     if args.evaluate_during_training:
                         results = evaluate(args, model, tokenizer)
                         for key, value in results.items():
-                            if key == "acc":
-                                max_acc = max([max_acc, value])
+                            if key=="acc":
+                                max_acc=max([max_acc,value])
                                 with open(os.path.join(args.output_dir, "acc.txt"), 'a+') as w:
                                     w.write("%d\t%f\t%f\n" % (global_step, value, max_acc))
                             if key == "f1":
-                                max_f1 = max([max_f1, value])
+                                max_f1=max([max_f1,value])
                                 with open(os.path.join(args.output_dir, "f1.txt"), 'a+') as w:
                                     w.write("%d\t%f\t%f\n" % (global_step, value, max_f1))
                     with open(os.path.join(args.output_dir, "loss.txt"), 'a+') as w:
-                        w.write("%d\t%f\n" % (global_step, (tr_loss - logging_loss) / logging_steps))
+                        w.write("%d\t%f\n"%(global_step, (tr_loss - logging_loss) / logging_steps))
                     logging_loss = tr_loss
 
                 if save_steps > 0 and global_step % save_steps == 0:
@@ -142,8 +141,7 @@ def train(args, train_dataset, model, tokenizer):
                     output_dir = os.path.join(args.output_dir, 'checkpoint-{}'.format(global_step))
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
-                    model_to_save = model.module if hasattr(model,
-                                                            'module') else model  # Take care of distributed/parallel training
+                    model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
                     model_to_save.save_pretrained(output_dir)
                     torch.save(args, os.path.join(output_dir, 'training_args.bin'))
                     logger.info("Saving model checkpoint to %s", output_dir)
@@ -188,11 +186,11 @@ def evaluate(args, model, tokenizer, prefix=""):
             batch = tuple(t.to(args.device) for t in batch)
 
             with torch.no_grad():
-                inputs = {'input_ids': batch[0],
+                inputs = {'input_ids':      batch[0],
                           'attention_mask': batch[1],
-                          'align_mask': batch[2],
-                          'labels': batch[4]}
-                inputs['token_type_ids'] = batch[3]
+                          'align_mask':batch[2],
+                          'labels':         batch[4]}
+                inputs['token_type_ids'] = None
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
 
@@ -227,7 +225,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_bert_align_{}_{}'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_align_{}_{}'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -237,17 +235,16 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     else:
         logger.info("Creating features from dataset file at %s", args.data_dir)
         label_list = processor.get_labels()
-        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(
-            args.data_dir)
+        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
         features = convert_examples_to_features(examples,
                                                 tokenizer,
                                                 label_list=label_list,
                                                 max_length=args.max_seq_length,
                                                 output_mode=output_mode,
-                                                pad_on_left=False,  # pad on the left for xlnet
+                                                pad_on_left=False,                 # pad on the left for xlnet
                                                 pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
                                                 pad_token_segment_id=0,
-                                                )
+        )
         logger.info("Saving features into cached file %s", cached_features_file)
         torch.save(features, cached_features_file)
 
@@ -261,7 +258,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     elif output_mode == "regression":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
 
-    dataset = TensorDataset(all_input_ids, all_attention_mask, all_align_mask, all_token_type_ids, all_labels)
+    dataset = TensorDataset(all_input_ids, all_attention_mask,all_align_mask,all_token_type_ids, all_labels)
     return dataset
 
 
@@ -269,11 +266,11 @@ def main():
     parser = argparse.ArgumentParser()
 
     ## Required parameters
-    parser.add_argument("--data_dir", default="data/QQP", type=str,
+    parser.add_argument("--data_dir", default="data/QNLI", type=str,
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
-    parser.add_argument("--task_name", default="QQP", type=str,
+    parser.add_argument("--task_name", default="QNLI", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_qqp_sfu_128", type=str,
+    parser.add_argument("--output_dir", default="output_qnli_sfu_roberta", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
     ## Other parameters
     parser.add_argument("--max_seq_length", default=128, type=int,
@@ -290,7 +287,7 @@ def main():
 
     parser.add_argument("--per_gpu_train_batch_size", default=64, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=96, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=64, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
@@ -321,11 +318,8 @@ def main():
                         help="random seed for initialization")
     args = parser.parse_args()
 
-    if os.path.exists(args.output_dir) and os.listdir(
-            args.output_dir) and args.do_train and not args.overwrite_output_dir:
-        raise ValueError(
-            "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
-                args.output_dir))
+    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
+        raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
 
     # Setup CUDA, GPU & distributed training
     device = torch.device("cuda")
@@ -333,10 +327,10 @@ def main():
     args.device = device
 
     # Setup logging
-    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                        datefmt='%m/%d/%Y %H:%M:%S',
-                        level=logging.INFO)
-    logger.warning("device: %s, n_gpu: %s", device, args.n_gpu)
+    logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                        datefmt = '%m/%d/%Y %H:%M:%S',
+                        level = logging.INFO)
+    logger.warning("device: %s, n_gpu: %s",device, args.n_gpu)
 
     # Set seed
     set_seed(args)
@@ -352,19 +346,20 @@ def main():
 
     # Load pretrained model and tokenizer
 
-    config_class, model_class, tokenizer_class = BertConfig, BertForSequenceClassification, BertTokenizer
-    config = config_class.from_pretrained("pretrained/cased_L-12_H-768_A-12/bert_config.json", num_labels=num_labels,
-                                          finetuning_task=args.task_name)
-    tokenizer = tokenizer_class.from_pretrained("pretrained/cased_L-12_H-768_A-12/vocab.txt")
-    model = model_class.from_pretrained("pretrained/bert-base.pt", from_tf=False, config=config)
+    config_class, model_class, tokenizer_class = RobertaConfig,RobertaForSequenceClassification,RobertaTokenizer
+    config = config_class.from_pretrained("pretrained/robertalarge/roberta_config.json",num_labels=num_labels,finetuning_task=args.task_name)
+    tokenizer = tokenizer_class.from_pretrained("./pretrained/robertalarge/")
+    model = model_class.from_pretrained("./pretrained/robertalarge/roberta-large-pytorch_model.bin", from_tf=False, config=config)
     model.to(args.device)
     logger.info("Training/evaluation parameters %s", args)
+
 
     # Training
     if args.do_train:
         train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, evaluate=False)
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
+
 
     # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
     if args.do_train:
@@ -375,8 +370,7 @@ def main():
         logger.info("Saving model checkpoint to %s", args.output_dir)
         # Save a trained model, configuration and tokenizer using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
-        model_to_save = model.module if hasattr(model,
-                                                'module') else model  # Take care of distributed/parallel training
+        model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
         model_to_save.save_pretrained(args.output_dir)
         tokenizer.save_pretrained(args.output_dir)
 
@@ -388,14 +382,14 @@ def main():
         tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
         model.to(args.device)
 
+
     # Evaluation
     results = {}
     if args.do_eval:
         tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
         checkpoints = [args.output_dir]
         if args.eval_all_checkpoints:
-            checkpoints = list(
-                os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
+            checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
             logging.getLogger("transformers.modeling_utils").setLevel(logging.WARN)  # Reduce logging
         logger.info("Evaluate the following checkpoints: %s", checkpoints)
         for checkpoint in checkpoints:
