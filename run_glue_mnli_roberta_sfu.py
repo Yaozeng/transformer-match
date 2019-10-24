@@ -285,11 +285,11 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-    parser.add_argument("--per_gpu_train_batch_size", default=64, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=8, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=64, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=12, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=8,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
     parser.add_argument("--learning_rate", default=3e-5, type=float,
                         help="The initial learning rate for Adam.")
