@@ -20,7 +20,7 @@ import sys
 import json
 import logging
 import os
-#import regex as re
+import regex as re
 from io import open
 
 from tokenization_gpt2 import GPT2Tokenizer

@@ -39,10 +39,6 @@ from processors.glue2 import glue_output_modes as output_modes
 from processors.glue2 import glue_processors as processors
 from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
 from file_utils import WEIGHTS_NAME
-try:
-    from torch.utils.tensorboard import SummaryWriter
-except:
-    from tensorboardX import SummaryWriter
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +51,6 @@ def set_seed(args):
 
 
 def train(args, train_dataset, model, tokenizer):
-    tb_writer = SummaryWriter()
     """ Train the model """
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset)
@@ -92,6 +87,8 @@ def train(args, train_dataset, model, tokenizer):
 
     global_step = 0
     tr_loss, logging_loss = 0.0, 0.0
+    max_acc=0
+    max_f1=0
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
@@ -127,9 +124,16 @@ def train(args, train_dataset, model, tokenizer):
                     if args.evaluate_during_training:
                         results = evaluate(args, model, tokenizer)
                         for key, value in results.items():
-                            tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
-                    tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
-                    tb_writer.add_scalar('loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
+                            if key=="acc":
+                                max_acc=max([max_acc,value])
+                                with open(os.path.join(args.output_dir, "acc.txt"), 'a+') as w:
+                                    w.write("%d\t%f\t%f\n" % (global_step, value, max_acc))
+                            if key == "f1":
+                                max_f1=max([max_f1,value])
+                                with open(os.path.join(args.output_dir, "f1.txt"), 'a+') as w:
+                                    w.write("%d\t%f\t%f\n" % (global_step, value, max_f1))
+                    with open(os.path.join(args.output_dir, "loss.txt"), 'a+') as w:
+                        w.write("%d\t%f\n"%(global_step, (tr_loss - logging_loss) / logging_steps))
                     logging_loss = tr_loss
 
                 if save_steps > 0 and global_step % save_steps == 0:
@@ -262,11 +266,11 @@ def main():
     parser = argparse.ArgumentParser()
 
     ## Required parameters
-    parser.add_argument("--data_dir", default="data/QNLI", type=str,
+    parser.add_argument("--data_dir", default="data/MNLI", type=str,
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
-    parser.add_argument("--task_name", default="QNLI", type=str,
+    parser.add_argument("--task_name", default="MNLI", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_qnli_sfu_roberta", type=str,
+    parser.add_argument("--output_dir", default="output_mnli_sfu_roberta", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
     ## Other parameters
     parser.add_argument("--max_seq_length", default=128, type=int,

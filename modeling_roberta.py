@@ -168,7 +168,7 @@ class RobertaModel(BertModel):
         self.embeddings = RobertaEmbeddings(config)
         self.init_weights()
 
-    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None):
+    def forward(self, input_ids, attention_mask=None, align_mask=None,token_type_ids=None, position_ids=None, head_mask=None):
         if input_ids[:, 0].sum().item() != 0:
             logger.warning("A sequence with no special tokens has been passed to the RoBERTa model. "
                            "This model requires special tokens in order to work. "
@@ -176,6 +176,7 @@ class RobertaModel(BertModel):
                            "or tokenizer.convert_tokens_to_ids().")
         return super(RobertaModel, self).forward(input_ids,
                                                  attention_mask=attention_mask,
+                                                 align_mask=align_mask,
                                                  token_type_ids=token_type_ids,
                                                  position_ids=position_ids,
                                                  head_mask=head_mask)
@@ -319,10 +320,11 @@ class RobertaForSequenceClassification(BertPreTrainedModel):
         self.roberta = RobertaModel(config)
         self.classifier = RobertaClassificationHead(config)
     
-    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
+    def forward(self, input_ids, attention_mask=None, align_mask=None,token_type_ids=None, position_ids=None, head_mask=None,
                 labels=None):
         outputs = self.roberta(input_ids,
                                attention_mask=attention_mask,
+                               align_mask=align_mask,
                                token_type_ids=token_type_ids,
                                position_ids=position_ids,
                                head_mask=head_mask)
