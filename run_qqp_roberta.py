@@ -118,7 +118,7 @@ def train(args, train_dataset, model, tokenizer):
                       'attention_mask': batch[1],
                       'align_mask': batch[2],
                       'labels':         batch[4]}
-            inputs['token_type_ids'] = batch[3]
+            inputs['token_type_ids'] = None
             outputs = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
 
@@ -201,7 +201,7 @@ def evaluate(args, model, tokenizer, prefix=""):
                           'attention_mask': batch[1],
                           'align_mask':batch[2],
                           'labels':         batch[4]}
-                inputs['token_type_ids'] = batch[3]
+                inputs['token_type_ids'] = None
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
 
@@ -358,7 +358,7 @@ def main():
     # Load pretrained model and tokenizer
 
     config_class, model_class, tokenizer_class = RobertaConfig,RobertaForSequenceClassification,RobertaTokenizer
-    config = config_class.from_pretrained("pretrained/robertalarge/roberta_config.json",num_labels=num_labels,finetuning_task=args.task_name)
+    config = config_class.from_pretrained("./pretrained/robertalarge/roberta_config.json",num_labels=num_labels,finetuning_task=args.task_name)
     tokenizer = tokenizer_class.from_pretrained("./pretrained/robertalarge/")
     model = model_class.from_pretrained("./pretrained/robertalarge/roberta-large-pytorch_model.bin", from_tf=False, config=config)
     model.to(args.device)

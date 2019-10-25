@@ -290,7 +290,7 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="QQP", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_mnli_qqp_roberta", type=str,
+    parser.add_argument("--output_dir", default="output_qqp_roberta", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
     ## Other parameters
     parser.add_argument("--max_seq_length", default=128, type=int,
