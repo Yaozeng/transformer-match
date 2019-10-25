@@ -38,7 +38,7 @@ from tokenization_roberta import RobertaTokenizer
 from processors.glue2 import glue_output_modes as output_modes
 from processors.glue2 import glue_processors as processors
 from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
-from file_utils import WEIGHTS_NAME
+from torch.utils.tensorboard import SummaryWriter
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ def set_seed(args):
 
 
 def train(args, train_dataset, model, tokenizer):
+    tb_writer = SummaryWriter()
     """ Train the model """
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset)
@@ -63,13 +64,29 @@ def train(args, train_dataset, model, tokenizer):
         t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
     warm_up_steps=int(args.warmup_steps*t_total)
-    logging_steps=int(args.logging_steps*t_total)
-    save_steps=int(args.save_steps*t_total)
     # Prepare optimizer and schedule (linear warmup and decay)
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if 'classifier' not in n and 'linear_transform' not in n]},
-        {'params': [p for n, p in model.named_parameters() if 'classifier' in n or 'linear_transform' in n], 'lr': 2e-3}
-    ]
+    no_decay = ['bias', 'LayerNorm.weight']
+    a=[]
+    b=[]
+    c=[]
+    d=[]
+    optimizer_grouped_parameters=[]
+    for n, p in model.named_parameters():
+        if 'classifier' in n or 'linear_transform' in n:
+            if any(nd in n for nd in no_decay):
+                a.append(p)
+            else:
+                b.append(p)
+        else:
+            if any(nd in n for nd in no_decay):
+                c.append(p)
+            else:
+                d.append(p)
+    optimizer_grouped_parameters.append({"params":a,"weight_decay":0,"lr":2e-3})
+    optimizer_grouped_parameters.append({"params": b, "weight_decay": args.weight_decay, "lr": 2e-3})
+    optimizer_grouped_parameters.append({"params": c, "weight_decay": 0})
+    optimizer_grouped_parameters.append({"params": d, "weight_decay": args.weight_decay})
+
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = WarmupLinearSchedule(optimizer, warmup_steps=warm_up_steps, t_total=t_total)
 
@@ -87,8 +104,10 @@ def train(args, train_dataset, model, tokenizer):
 
     global_step = 0
     tr_loss, logging_loss = 0.0, 0.0
+    early_stop=False
+    pitace=0
     max_acc=0
-    max_f1=0
+    cur_acc=0
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
@@ -119,40 +138,41 @@ def train(args, train_dataset, model, tokenizer):
                 scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
-
-                if logging_steps > 0 and global_step % logging_steps == 0:
-                    if args.evaluate_during_training:
-                        results = evaluate(args, model, tokenizer)
-                        for key, value in results.items():
-                            if key=="acc":
-                                max_acc=max([max_acc,value])
-                                with open(os.path.join(args.output_dir, "acc.txt"), 'a+') as w:
-                                    w.write("%d\t%f\t%f\n" % (global_step, value, max_acc))
-                            if key == "f1":
-                                max_f1=max([max_f1,value])
-                                with open(os.path.join(args.output_dir, "f1.txt"), 'a+') as w:
-                                    w.write("%d\t%f\t%f\n" % (global_step, value, max_f1))
-                    with open(os.path.join(args.output_dir, "loss.txt"), 'a+') as w:
-                        w.write("%d\t%f\n"%(global_step, (tr_loss - logging_loss) / logging_steps))
-                    logging_loss = tr_loss
-
-                if save_steps > 0 and global_step % save_steps == 0:
-                    # Save model checkpoint
-                    output_dir = os.path.join(args.output_dir, 'checkpoint-{}'.format(global_step))
-                    if not os.path.exists(output_dir):
-                        os.makedirs(output_dir)
-                    model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
-                    model_to_save.save_pretrained(output_dir)
-                    torch.save(args, os.path.join(output_dir, 'training_args.bin'))
-                    logger.info("Saving model checkpoint to %s", output_dir)
+                if args.logging_steps > 0 and global_step % args.logging_steps == 0:
+                    tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
+                    tb_writer.add_scalar('loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
+            logging_loss = tr_loss
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
                 break
+        results = evaluate(args, model, tokenizer)
+        for key, value in results.items():
+            if key=="acc":
+                if value>max_acc:
+                    max_acc=value
+                    output_dir = os.path.join(args.output_dir, 'checkpoint-{}'.format(global_step))
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
+                    model_to_save = model.module if hasattr(model,
+                                                            'module') else model  # Take care of distributed/parallel training
+                    model_to_save.save_pretrained(output_dir)
+                    torch.save(args, os.path.join(output_dir, 'training_args.bin'))
+                    logger.info("Saving model checkpoint to %s", output_dir)
+                if value>cur_acc:
+                    pitace=0
+                else:
+                    pitace+=1
+                    if pitace>3:
+                        early_stop=True
+                cur_acc=value
+            tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
+        if early_stop:
+            train_iterator.close()
+            break
         if args.max_steps > 0 and global_step > args.max_steps:
             train_iterator.close()
             break
-
     return global_step, tr_loss / global_step
 
 
@@ -270,7 +290,7 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="QQP", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_qqp_sfu_roberta", type=str,
+    parser.add_argument("--output_dir", default="output_mnli_qqp_roberta", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
     ## Other parameters
     parser.add_argument("--max_seq_length", default=128, type=int,
@@ -278,40 +298,31 @@ def main():
                              "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--do_train", default=True,
                         help="Whether to run training.")
-    parser.add_argument("--do_eval", default=True,
-                        help="Whether to run eval on the dev set.")
-    parser.add_argument("--evaluate_during_training", default=True,
-                        help="Rul evaluation during training at each logging step.")
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
-
-    parser.add_argument("--per_gpu_train_batch_size", default=8, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=12, type=int,
                         help="Batch size per GPU/CPU for training.")
     parser.add_argument("--per_gpu_eval_batch_size", default=12, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=2,
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
-    parser.add_argument("--learning_rate", default=1e-5, type=float,
+    parser.add_argument("--learning_rate", default=2e-5, type=float,
                         help="The initial learning rate for Adam.")
-    parser.add_argument("--weight_decay", default=0, type=float,
+    parser.add_argument("--weight_decay", default=0.1, type=float,
                         help="Weight deay if we apply some.")
-    parser.add_argument("--adam_epsilon", default=1e-8, type=float,
+    parser.add_argument("--adam_epsilon", default=1e-6, type=float,
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
-    parser.add_argument("--num_train_epochs", default=3.0, type=float,
+    parser.add_argument("--num_train_epochs", default=10.0, type=float,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
-    parser.add_argument("--warmup_steps", default=0.1, type=float,
+    parser.add_argument("--warmup_steps", default=0.06, type=float,
                         help="Linear warmup over warmup_steps.")
 
-    parser.add_argument('--logging_steps', type=float, default=0.05,
+    parser.add_argument('--logging_steps', type=int, default=50,
                         help="Log every X updates steps.")
-    parser.add_argument('--save_steps', type=float, default=0.05,
-                        help="Save checkpoint every X updates steps.")
-    parser.add_argument("--eval_all_checkpoints", default=False,
-                        help="Evaluate all checkpoints starting with the same prefix as model_name ending and ending with step number")
     parser.add_argument('--overwrite_output_dir', default=True,
                         help="Overwrite the content of the output directory")
     parser.add_argument('--seed', type=int, default=42,
@@ -352,8 +363,6 @@ def main():
     model = model_class.from_pretrained("./pretrained/robertalarge/roberta-large-pytorch_model.bin", from_tf=False, config=config)
     model.to(args.device)
     logger.info("Training/evaluation parameters %s", args)
-
-
     # Training
     if args.do_train:
         train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, evaluate=False)
@@ -361,46 +370,6 @@ def main():
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
 
-    # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
-    if args.do_train:
-        # Create output directory if needed
-        if not os.path.exists(args.output_dir):
-            os.makedirs(args.output_dir)
-
-        logger.info("Saving model checkpoint to %s", args.output_dir)
-        # Save a trained model, configuration and tokenizer using `save_pretrained()`.
-        # They can then be reloaded using `from_pretrained()`
-        model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
-        model_to_save.save_pretrained(args.output_dir)
-        tokenizer.save_pretrained(args.output_dir)
-
-        # Good practice: save your training arguments together with the trained model
-        torch.save(args, os.path.join(args.output_dir, 'training_args.bin'))
-
-        # Load a trained model and vocabulary that you have fine-tuned
-        model = model_class.from_pretrained(args.output_dir)
-        tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
-        model.to(args.device)
-
-
-    # Evaluation
-    results = {}
-    if args.do_eval:
-        tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
-        checkpoints = [args.output_dir]
-        if args.eval_all_checkpoints:
-            checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
-            logging.getLogger("transformers.modeling_utils").setLevel(logging.WARN)  # Reduce logging
-        logger.info("Evaluate the following checkpoints: %s", checkpoints)
-        for checkpoint in checkpoints:
-            global_step = checkpoint.split('-')[-1] if len(checkpoints) > 1 else ""
-            model = model_class.from_pretrained(checkpoint)
-            model.to(args.device)
-            result = evaluate(args, model, tokenizer, prefix=global_step)
-            result = dict((k + '_{}'.format(global_step), v) for k, v in result.items())
-            results.update(result)
-
-    return results
 
 
 if __name__ == "__main__":
