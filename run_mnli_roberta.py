@@ -32,9 +32,9 @@ from tqdm import tqdm, trange
 from optimization import AdamW, WarmupLinearSchedule
 
 from metrics import glue_compute_metrics as compute_metrics
-from configuration_bert import BertConfig
-from modeling_bert4 import BertForSequenceClassification
-from tokenization_bert import BertTokenizer
+from configuration_roberta import RobertaConfig
+from modeling_roberta import RobertaForSequenceClassification
+from tokenization_roberta import RobertaTokenizer
 from processors.glue2 import glue_output_modes as output_modes
 from processors.glue2 import glue_processors as processors
 from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
@@ -65,7 +65,6 @@ def train(args, train_dataset, model, tokenizer):
         t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
     warm_up_steps=int(args.warmup_steps*t_total)
-    logging_steps=int(args.logging_steps*t_total)
     save_steps=int(args.save_steps*t_total)
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
@@ -237,7 +236,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_bert_align_{}_{}'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_align_{}_{}'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -358,10 +357,10 @@ def main():
 
     # Load pretrained model and tokenizer
 
-    config_class, model_class, tokenizer_class = BertConfig,BertForSequenceClassification,BertTokenizer
-    config = config_class.from_pretrained("pretrained/cased_L-12_H-768_A-12/bert_config.json",num_labels=num_labels,finetuning_task=args.task_name)
-    tokenizer = tokenizer_class.from_pretrained("pretrained/cased_L-12_H-768_A-12/vocab.txt")
-    model = model_class.from_pretrained("pretrained/bert-base.pt", from_tf=False, config=config)
+    config_class, model_class, tokenizer_class = RobertaConfig,RobertaForSequenceClassification,RobertaTokenizer
+    config = config_class.from_pretrained("pretrained/robertalarge/roberta_config.json",num_labels=num_labels,finetuning_task=args.task_name)
+    tokenizer = tokenizer_class.from_pretrained("./pretrained/robertalarge/")
+    model = model_class.from_pretrained("./pretrained/robertalarge/roberta-large-pytorch_model.bin", from_tf=False, config=config)
     model.to(args.device)
     logger.info("Training/evaluation parameters %s", args)
 
