@@ -17,6 +17,8 @@
 
 import logging
 import os
+import csv
+import sys
 
 from .utils import DataProcessor, InputExample, InputFeatures
 from file_utils import is_tf_available
@@ -149,7 +151,67 @@ def glue_convert_examples_to_features(examples, tokenizer,
 
     return features
 
+class MyProcessor(DataProcessor):
+    """Processor for the MRPC data set (GLUE version)."""
 
+    def get_example_from_tensor_dict(self, tensor_dict):
+        """See base class."""
+        return InputExample(tensor_dict['idx'].numpy(),
+                            tensor_dict['sentence1'].numpy().decode('utf-8'),
+                            tensor_dict['sentence2'].numpy().decode('utf-8'),
+                            str(tensor_dict['label'].numpy()))
+
+    def get_train_examples(self, data_dir):
+        """See base class."""
+        logger.info("LOOKING AT {}".format(os.path.join(data_dir, "deliver_qa.out.fix.tsv")))
+        return self._create_examples(
+            self._read_tsv(os.path.join(data_dir, "deliver_qa.out.fix.tsv")), "train")
+
+    def get_dev_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(
+            self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
+
+    def get_dev_examples2(self, data_dir):
+        with open(os.path.join(data_dir, "badcase.to20190711.txt"), "r", encoding="utf-8-sig") as f:
+            reader = csv.reader(f, delimiter="\t", quotechar=None)
+            lines = []
+            for line in reader:
+                if sys.version_info[0] == 2:
+                    line = list(unicode(cell, 'utf-8') for cell in line)
+                lines.append(line)
+        examples = []
+        for (i, line) in enumerate(lines):
+            if i == 0:
+                continue
+            guid = "%s-%s" % ("dev", i)
+            try:
+                text_a = line[0]
+                text_b = line[1]
+                label = line[2]
+            except IndexError:
+                continue
+            examples.append(
+                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+        return examples
+
+    def get_labels(self):
+        """See base class."""
+        return ["0", "1"]
+
+    def _create_examples(self, lines, set_type):
+        """Creates examples for the training and dev sets."""
+        examples = []
+        for (i, line) in enumerate(lines):
+            if i == 0:
+                continue
+            guid = "%s-%s" % (set_type, i)
+            text_a = line[3]
+            text_b = line[4]
+            label = line[5]
+            examples.append(
+                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+        return examples
 class MrpcProcessor(DataProcessor):
     """Processor for the MRPC data set (GLUE version)."""
 
@@ -365,13 +427,76 @@ class QqpProcessor(DataProcessor):
 
     def get_train_examples(self, data_dir):
         """See base class."""
-        return self._create_examples(
+        lines = []
+        with open("./data/deliver_qa.out.fix.tsv", "r", encoding="utf-8-sig") as f:
+            reader = csv.reader(f, delimiter="\t", quotechar=None)
+            for line in reader:
+                if sys.version_info[0] == 2:
+                    line = list(unicode(cell, 'utf-8') for cell in line)
+                lines.append(line)
+        examples = []
+        for (i, line) in enumerate(lines):
+            if i == 0:
+                continue
+            guid = "%s-%s" % ("train_new", i)
+            try:
+                text_a = line[3]
+                text_b = line[4]
+                label = line[5]
+            except IndexError:
+                continue
+            examples.append(
+                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+        examples+=self._create_examples(
             self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
+        return examples
 
     def get_dev_examples(self, data_dir):
         """See base class."""
         return self._create_examples(
             self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
+
+    def get_dev_examples2(self, data_dir):
+        lines = []
+        with open("./data/badcase.to20190711.txt", "r", encoding="utf-8-sig") as f:
+            reader = csv.reader(f, delimiter="\t", quotechar=None)
+            for line in reader:
+                if sys.version_info[0] == 2:
+                    line = list(unicode(cell, 'utf-8') for cell in line)
+                lines.append(line)
+        examples = []
+        for (i, line) in enumerate(lines):
+            if i == 0:
+                continue
+            guid = "%s-%s" % ("dev", i)
+            try:
+                text_a = line[0]
+                text_b = line[1]
+                label = line[2]
+            except IndexError:
+                continue
+            examples.append(
+                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+        return examples
+    def get_dev_examples3(self, data_dir):
+        lines = []
+        with open("./data/deliver_qa.out.fix.tsv", "r", encoding="utf-8-sig") as f:
+            reader = csv.reader(f, delimiter="\t", quotechar=None)
+            for line in reader:
+                if sys.version_info[0] == 2:
+                    line = list(unicode(cell, 'utf-8') for cell in line)
+                lines.append(line)
+        examples = []
+        for (i, line) in enumerate(lines):
+            if i == 0:
+                continue
+            guid = "%s-%s" % ("dev", i)
+            text_a = line[3]
+            text_b = line[4]
+            label = line[5]
+            examples.append(
+                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+        return examples
 
     def get_labels(self):
         """See base class."""
@@ -522,6 +647,7 @@ glue_tasks_num_labels = {
     "qnli": 2,
     "rte": 2,
     "wnli": 2,
+    "mytask":2,
 }
 
 glue_processors = {
@@ -535,6 +661,7 @@ glue_processors = {
     "qnli": QnliProcessor,
     "rte": RteProcessor,
     "wnli": WnliProcessor,
+    "mytask":MyProcessor,
 }
 
 glue_output_modes = {
@@ -548,4 +675,6 @@ glue_output_modes = {
     "qnli": "classification",
     "rte": "classification",
     "wnli": "classification",
+    "mytask":"classification",
 }
+

@@ -39,6 +39,7 @@ from processors.glue2 import glue_output_modes as output_modes
 from processors.glue2 import glue_processors as processors
 from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
 from file_utils import WEIGHTS_NAME
+from torch.utils.tensorboard import SummaryWriter
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ def set_seed(args):
 
 
 def train(args, train_dataset, model, tokenizer):
+    tb_writer = SummaryWriter()
     """ Train the model """
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset)
@@ -63,13 +65,30 @@ def train(args, train_dataset, model, tokenizer):
         t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
     warm_up_steps=int(args.warmup_steps*t_total)
-    logging_steps=int(args.logging_steps*t_total)
     save_steps=int(args.save_steps*t_total)
     # Prepare optimizer and schedule (linear warmup and decay)
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if 'classifier' not in n and 'linear_transform' not in n]},
-        {'params': [p for n, p in model.named_parameters() if 'classifier' in n or 'linear_transform' in n], 'lr': 2e-3}
-    ]
+    no_decay = ['bias', 'LayerNorm.weight']
+    a = []
+    b = []
+    c = []
+    d = []
+    optimizer_grouped_parameters = []
+    for n, p in model.named_parameters():
+        if 'classifier' in n or 'linear_transform' in n:
+            if any(nd in n for nd in no_decay):
+                a.append(p)
+            else:
+                b.append(p)
+        else:
+            if any(nd in n for nd in no_decay):
+                c.append(p)
+            else:
+                d.append(p)
+    optimizer_grouped_parameters.append({"params": a, "weight_decay": 0, "lr": 2e-3})
+    optimizer_grouped_parameters.append({"params": b, "weight_decay": args.weight_decay, "lr": 2e-3})
+    optimizer_grouped_parameters.append({"params": c, "weight_decay": 0})
+    optimizer_grouped_parameters.append({"params": d, "weight_decay": args.weight_decay})
+
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = WarmupLinearSchedule(optimizer, warmup_steps=warm_up_steps, t_total=t_total)
 
@@ -87,8 +106,6 @@ def train(args, train_dataset, model, tokenizer):
 
     global_step = 0
     tr_loss, logging_loss = 0.0, 0.0
-    max_acc=0
-    max_f1=0
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
@@ -120,23 +137,17 @@ def train(args, train_dataset, model, tokenizer):
                 model.zero_grad()
                 global_step += 1
 
-                if logging_steps > 0 and global_step % logging_steps == 0:
-                    if args.evaluate_during_training:
-                        results = evaluate(args, model, tokenizer)
-                        for key, value in results.items():
-                            if key=="acc":
-                                max_acc=max([max_acc,value])
-                                with open(os.path.join(args.output_dir, "acc.txt"), 'a+') as w:
-                                    w.write("%d\t%f\t%f\n" % (global_step, value, max_acc))
-                            if key == "f1":
-                                max_f1=max([max_f1,value])
-                                with open(os.path.join(args.output_dir, "f1.txt"), 'a+') as w:
-                                    w.write("%d\t%f\t%f\n" % (global_step, value, max_f1))
-                    with open(os.path.join(args.output_dir, "loss.txt"), 'a+') as w:
-                        w.write("%d\t%f\n"%(global_step, (tr_loss - logging_loss) / logging_steps))
+                if args.logging_steps > 0 and global_step % args.logging_steps == 0:
+                    tb_writer.add_scalar('lr_n', scheduler.get_lr()[0], global_step)
+                    tb_writer.add_scalar('lr_o', scheduler.get_lr()[2], global_step)
+                    tb_writer.add_scalar('loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
                     logging_loss = tr_loss
 
                 if save_steps > 0 and global_step % save_steps == 0:
+                    if args.evaluate_during_training:
+                        results = evaluate(args, model, tokenizer)
+                        for key, value in results.items():
+                            tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
                     # Save model checkpoint
                     output_dir = os.path.join(args.output_dir, 'checkpoint-{}'.format(global_step))
                     if not os.path.exists(output_dir):
@@ -235,7 +246,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     else:
         logger.info("Creating features from dataset file at %s", args.data_dir)
         label_list = processor.get_labels()
-        examples = processor.get_dev_examples2(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
+        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
         features = convert_examples_to_features(examples,
                                                 tokenizer,
                                                 label_list=label_list,
@@ -270,10 +281,10 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="mytask", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_qqp_sfu_roberta", type=str,
+    parser.add_argument("--output_dir", default="output_mytask_roberta", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
     ## Other parameters
-    parser.add_argument("--max_seq_length", default=128, type=int,
+    parser.add_argument("--max_seq_length", default=64, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--do_train", default=True,
@@ -293,20 +304,20 @@ def main():
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
     parser.add_argument("--learning_rate", default=1e-5, type=float,
                         help="The initial learning rate for Adam.")
-    parser.add_argument("--weight_decay", default=0, type=float,
+    parser.add_argument("--weight_decay", default=1e-5, type=float,
                         help="Weight deay if we apply some.")
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
-    parser.add_argument("--num_train_epochs", default=3.0, type=float,
+    parser.add_argument("--num_train_epochs", default=4.0, type=float,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
-    parser.add_argument("--warmup_steps", default=0.1, type=float,
+    parser.add_argument("--warmup_steps", default=0, type=float,
                         help="Linear warmup over warmup_steps.")
 
-    parser.add_argument('--logging_steps', type=float, default=0.05,
+    parser.add_argument('--logging_steps', type=int, default=50,
                         help="Log every X updates steps.")
     parser.add_argument('--save_steps', type=float, default=0.05,
                         help="Save checkpoint every X updates steps.")
@@ -347,7 +358,7 @@ def main():
     # Load pretrained model and tokenizer
 
     config_class, model_class, tokenizer_class = RobertaConfig,RobertaForSequenceClassification,RobertaTokenizer
-    config = config_class.from_pretrained("pretrained/robertalarge/roberta_config.json",num_labels=num_labels,finetuning_task=args.task_name)
+    config = config_class.from_pretrained("./pretrained/robertalarge/roberta_config.json",num_labels=num_labels,finetuning_task=args.task_name)
     tokenizer = tokenizer_class.from_pretrained("./pretrained/robertalarge/")
     model = model_class.from_pretrained("./pretrained/robertalarge/roberta-large-pytorch_model.bin", from_tf=False, config=config)
     model.to(args.device)

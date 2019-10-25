@@ -33,16 +33,15 @@ from optimization import AdamW, WarmupLinearSchedule
 
 from metrics import glue_compute_metrics as compute_metrics
 from configuration_roberta import RobertaConfig
-from modeling_roberta import RobertaForSequenceClassification
+from modeling_roberta2 import RobertaForSequenceClassification
 from tokenization_roberta import RobertaTokenizer
-from processors.glue2 import glue_output_modes as output_modes
-from processors.glue2 import glue_processors as processors
-from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
+from processors.glue import glue_output_modes as output_modes
+from processors.glue import glue_processors as processors
+from processors.glue import glue_convert_examples_to_features as convert_examples_to_features
 from file_utils import WEIGHTS_NAME
 from torch.utils.tensorboard import SummaryWriter
 
 logger = logging.getLogger(__name__)
-
 def set_seed(args):
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -52,7 +51,7 @@ def set_seed(args):
 
 
 def train(args, train_dataset, model, tokenizer):
-    tb_writer = SummaryWriter()
+    tb_writer=SummaryWriter()
     """ Train the model """
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset)
@@ -64,38 +63,18 @@ def train(args, train_dataset, model, tokenizer):
     else:
         t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
-    warm_up_steps=int(args.warmup_steps*t_total)
-    save_steps=int(args.save_steps*t_total)
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
-    a = []
-    b = []
-    c = []
-    d = []
-    optimizer_grouped_parameters = []
-    for n, p in model.named_parameters():
-        if 'classifier' in n or 'linear_transform' in n:
-            if any(nd in n for nd in no_decay):
-                a.append(p)
-            else:
-                b.append(p)
-        else:
-            if any(nd in n for nd in no_decay):
-                c.append(p)
-            else:
-                d.append(p)
-    optimizer_grouped_parameters.append({"params": a, "weight_decay": 0, "lr": 2e-3})
-    optimizer_grouped_parameters.append({"params": b, "weight_decay": args.weight_decay, "lr": 2e-3})
-    optimizer_grouped_parameters.append({"params": c, "weight_decay": 0})
-    optimizer_grouped_parameters.append({"params": d, "weight_decay": args.weight_decay})
-
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-    scheduler = WarmupLinearSchedule(optimizer, warmup_steps=warm_up_steps, t_total=t_total)
+    scheduler = WarmupLinearSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
 
     # multi-gpu training (should be after apex fp16 initialization)
     if args.n_gpu > 1:
         model = torch.nn.DataParallel(model)
-
     # Train!
     logger.info("***** Running training *****")
     logger.info("  Num examples = %d", len(train_dataset))
@@ -108,7 +87,7 @@ def train(args, train_dataset, model, tokenizer):
     tr_loss, logging_loss = 0.0, 0.0
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
-    set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
+    set_seed(args)
     for _ in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration")
         for step, batch in enumerate(epoch_iterator):
@@ -116,8 +95,7 @@ def train(args, train_dataset, model, tokenizer):
             batch = tuple(t.to(args.device) for t in batch)
             inputs = {'input_ids':      batch[0],
                       'attention_mask': batch[1],
-                      'align_mask': batch[2],
-                      'labels':         batch[4]}
+                      'labels':         batch[3]}
             inputs['token_type_ids'] = None
             outputs = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
@@ -136,18 +114,15 @@ def train(args, train_dataset, model, tokenizer):
                 scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
-
                 if args.logging_steps > 0 and global_step % args.logging_steps == 0:
-                    tb_writer.add_scalar('lr_n', scheduler.get_lr()[0], global_step)
-                    tb_writer.add_scalar('lr_o', scheduler.get_lr()[2], global_step)
-                    tb_writer.add_scalar('loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
-                    logging_loss = tr_loss
-
-                if save_steps > 0 and global_step % save_steps == 0:
                     if args.evaluate_during_training:
                         results = evaluate(args, model, tokenizer)
                         for key, value in results.items():
                             tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
+                            tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
+                    tb_writer.add_scalar('loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
+                    logging_loss = tr_loss
+                if args.save_steps > 0 and global_step % args.save_steps == 0:
                     # Save model checkpoint
                     output_dir = os.path.join(args.output_dir, 'checkpoint-{}'.format(global_step))
                     if not os.path.exists(output_dir):
@@ -180,7 +155,6 @@ def evaluate(args, model, tokenizer, prefix=""):
             os.makedirs(eval_output_dir)
 
         args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-        # Note that DistributedSampler samples randomly
         eval_sampler = SequentialSampler(eval_dataset)
         eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
@@ -199,8 +173,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             with torch.no_grad():
                 inputs = {'input_ids':      batch[0],
                           'attention_mask': batch[1],
-                          'align_mask':batch[2],
-                          'labels':         batch[4]}
+                          'labels':         batch[3]}
                 inputs['token_type_ids'] = None
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
@@ -223,7 +196,7 @@ def evaluate(args, model, tokenizer, prefix=""):
         results.update(result)
 
         output_eval_file = os.path.join(eval_output_dir, "eval_results.txt")
-        with open(output_eval_file, "a+") as writer:
+        with open(output_eval_file, "w") as writer:
             logger.info("***** Eval results {} *****".format(prefix))
             for key in sorted(result.keys()):
                 logger.info("  %s = %s", key, str(result[key]))
@@ -236,7 +209,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_align_{}_{}'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -246,8 +219,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     else:
         logger.info("Creating features from dataset file at %s", args.data_dir)
         label_list = processor.get_labels()
-        label_list[1], label_list[2] = label_list[2], label_list[1]
-        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
+        examples = processor.get_dev_examples2(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
         features = convert_examples_to_features(examples,
                                                 tokenizer,
                                                 label_list=label_list,
@@ -257,20 +229,19 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
                                                 pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
                                                 pad_token_segment_id=0,
         )
+
         logger.info("Saving features into cached file %s", cached_features_file)
         torch.save(features, cached_features_file)
-
     # Convert to Tensors and build dataset
     all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
     all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
-    all_align_mask = torch.tensor([f.align_mask for f in features], dtype=torch.long)
     all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
     if output_mode == "classification":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
     elif output_mode == "regression":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
 
-    dataset = TensorDataset(all_input_ids, all_attention_mask,all_align_mask,all_token_type_ids, all_labels)
+    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
     return dataset
 
 
@@ -278,28 +249,27 @@ def main():
     parser = argparse.ArgumentParser()
 
     ## Required parameters
-    parser.add_argument("--data_dir", default="data/MNLI", type=str,
+    parser.add_argument("--data_dir", default="data", type=str,
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
-    parser.add_argument("--task_name", default="MNLI", type=str,
+    parser.add_argument("--task_name", default="mytask", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_mnli_roberta", type=str,
+    parser.add_argument("--output_dir", default="mytask", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
-    ## Other parameters
-    parser.add_argument("--max_seq_length", default=128, type=int,
+    parser.add_argument("--max_seq_length", default=64, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
-    parser.add_argument("--do_train", default=True,
+    parser.add_argument("--do_train",default=True,
                         help="Whether to run training.")
     parser.add_argument("--do_eval", default=True,
                         help="Whether to run eval on the dev set.")
-    parser.add_argument("--evaluate_during_training", default=True,
+    parser.add_argument("--evaluate_during_training", action='store_true',
                         help="Rul evaluation during training at each logging step.")
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-    parser.add_argument("--per_gpu_train_batch_size", default=12, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=16, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=12, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=16, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
@@ -311,21 +281,23 @@ def main():
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
-    parser.add_argument("--num_train_epochs", default=3.0, type=float,
+    parser.add_argument("--num_train_epochs", default=4.0, type=float,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
-    parser.add_argument("--warmup_steps", default=0.1, type=float,
+    parser.add_argument("--warmup_steps", default=0, type=int,
                         help="Linear warmup over warmup_steps.")
 
-    parser.add_argument('--logging_steps', type=int, default=150,
+    parser.add_argument('--logging_steps', type=int, default=50,
                         help="Log every X updates steps.")
-    parser.add_argument('--save_steps', type=float, default=0.05,
+    parser.add_argument('--save_steps', type=int, default=50,
                         help="Save checkpoint every X updates steps.")
-    parser.add_argument("--eval_all_checkpoints", default=False,
+    parser.add_argument("--eval_all_checkpoints", action='store_true',
                         help="Evaluate all checkpoints starting with the same prefix as model_name ending and ending with step number")
     parser.add_argument('--overwrite_output_dir', default=True,
                         help="Overwrite the content of the output directory")
+    parser.add_argument('--overwrite_cache', action='store_true',
+                        help="Overwrite the cached training and evaluation sets")
     parser.add_argument('--seed', type=int, default=42,
                         help="random seed for initialization")
     args = parser.parse_args()
@@ -334,6 +306,7 @@ def main():
         raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
 
     # Setup CUDA, GPU & distributed training
+
     device = torch.device("cuda")
     args.n_gpu = torch.cuda.device_count()
     args.device = device
@@ -362,7 +335,9 @@ def main():
     config = config_class.from_pretrained("./pretrained/robertalarge/roberta_config.json",num_labels=num_labels,finetuning_task=args.task_name)
     tokenizer = tokenizer_class.from_pretrained("./pretrained/robertalarge/")
     model = model_class.from_pretrained("./pretrained/robertalarge/roberta-large-pytorch_model.bin", from_tf=False, config=config)
+
     model.to(args.device)
+
     logger.info("Training/evaluation parameters %s", args)
 
 
@@ -376,7 +351,7 @@ def main():
     # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
     if args.do_train:
         # Create output directory if needed
-        if not os.path.exists(args.output_dir):
+        if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(args.output_dir)
 
         logger.info("Saving model checkpoint to %s", args.output_dir)
