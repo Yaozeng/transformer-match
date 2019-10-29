@@ -34,15 +34,15 @@ from tqdm import tqdm, trange
 
 from file_utils import WEIGHTS_NAME
 from configuration_roberta import RobertaConfig
-from modeling_roberta2 import RobertaForSequenceClassification
+from modeling_roberta import RobertaForSequenceClassification
 from tokenization_roberta import RobertaTokenizer
 
 from optimization import AdamW, WarmupLinearSchedule
 
 from metrics import glue_compute_metrics as compute_metrics
-from processors.glue import glue_output_modes as output_modes
-from processors.glue import glue_processors as processors
-from processors.glue import glue_convert_examples_to_features as convert_examples_to_features
+from processors.glue2 import glue_output_modes as output_modes
+from processors.glue2 import glue_processors as processors
+from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +72,26 @@ def train(args, train_dataset, model, tokenizer):
     save_steps=int(args.save_steps*t_total)
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-         'weight_decay': args.weight_decay},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-    ]
+    a = []
+    b = []
+    c = []
+    d = []
+    optimizer_grouped_parameters = []
+    for n, p in model.named_parameters():
+        if 'classifier' in n or 'linear_transform' in n:
+            if any(nd in n for nd in no_decay):
+                a.append(p)
+            else:
+                b.append(p)
+        else:
+            if any(nd in n for nd in no_decay):
+                c.append(p)
+            else:
+                d.append(p)
+    optimizer_grouped_parameters.append({"params": a, "weight_decay": 0, "lr": 2e-3})
+    optimizer_grouped_parameters.append({"params": b, "weight_decay": args.weight_decay, "lr": 2e-3})
+    optimizer_grouped_parameters.append({"params": c, "weight_decay": 0})
+    optimizer_grouped_parameters.append({"params": d, "weight_decay": args.weight_decay})
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = WarmupLinearSchedule(optimizer, warmup_steps=warm_up_steps, t_total=t_total)
 
@@ -103,10 +118,11 @@ def train(args, train_dataset, model, tokenizer):
         for step, batch in enumerate(epoch_iterator):
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
-            inputs = {'input_ids': batch[0],
+            inputs = {'input_ids':      batch[0],
                       'attention_mask': batch[1],
-                      'labels': batch[3]}
-            inputs['token_type_ids'] = None  # XLM, DistilBERT and RoBERTa don't use segment_ids
+                      'align_mask': batch[2],
+                      'labels':         batch[4]}
+            inputs['token_type_ids'] = None
             outputs = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
 
@@ -127,7 +143,8 @@ def train(args, train_dataset, model, tokenizer):
 
                 if args.logging_steps > 0 and global_step % args.logging_steps == 0:
                     # Log metrics
-                    tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
+                    tb_writer.add_scalar('lr_n', scheduler.get_lr()[0], global_step)
+                    tb_writer.add_scalar('lr_o', scheduler.get_lr()[2], global_step)
                     tb_writer.add_scalar('loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
                     logging_loss = tr_loss
 
@@ -189,9 +206,9 @@ def evaluate(args, model, tokenizer, prefix=""):
             with torch.no_grad():
                 inputs = {'input_ids': batch[0],
                           'attention_mask': batch[1],
-                          'labels': batch[3]}
-
-                inputs['token_type_ids'] = None  # XLM, DistilBERT and RoBERTa don't use segment_ids
+                          'align_mask': batch[2],
+                          'labels': batch[4]}
+                inputs['token_type_ids'] = None
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
 
@@ -227,7 +244,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask_sfu'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -255,13 +272,14 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     # Convert to Tensors and build dataset
     all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
     all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
+    all_align_mask = torch.tensor([f.align_mask for f in features], dtype=torch.long)
     all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
     if output_mode == "classification":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
     elif output_mode == "regression":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
 
-    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+    dataset = TensorDataset(all_input_ids, all_attention_mask,all_align_mask,all_token_type_ids, all_labels)
     return dataset
 
 
@@ -273,18 +291,18 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="QQP", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_qqp_mytask_roberta", type=str,
+    parser.add_argument("--output_dir", default="output_qqp_mytask_roberta_sfu", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
 
     ## Other parameters
     parser.add_argument("--max_seq_length", default=128, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
-    parser.add_argument("--do_train", default=True,
+    parser.add_argument("--do_train", action='store_true',
                         help="Whether to run training.")
-    parser.add_argument("--do_eval", default=True,
+    parser.add_argument("--do_eval", action='store_true',
                         help="Whether to run eval on the dev set.")
-    parser.add_argument("--evaluate_during_training", default=True,
+    parser.add_argument("--evaluate_during_training", action='store_true',
                         help="Rul evaluation during training at each logging step.")
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
@@ -297,9 +315,9 @@ def main():
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
     parser.add_argument("--learning_rate", default=2e-5, type=float,
                         help="The initial learning rate for Adam.")
-    parser.add_argument("--weight_decay", default=0.0, type=float,
+    parser.add_argument("--weight_decay", default=0.1, type=float,
                         help="Weight deay if we apply some.")
-    parser.add_argument("--adam_epsilon", default=1e-8, type=float,
+    parser.add_argument("--adam_epsilon", default=1e-6, type=float,
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
@@ -307,7 +325,7 @@ def main():
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
-    parser.add_argument("--warmup_steps", default=0.1, type=float,
+    parser.add_argument("--warmup_steps", default=0.06, type=float,
                         help="Linear warmup over warmup_steps.")
 
     parser.add_argument('--logging_steps', type=int, default=150,
