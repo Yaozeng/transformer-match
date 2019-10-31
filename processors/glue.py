@@ -163,19 +163,18 @@ class MyProcessor(DataProcessor):
 
     def get_train_examples(self, data_dir):
         """See base class."""
-        logger.info("LOOKING AT {}".format(os.path.join(data_dir, "deliver_qa.out.fix.tsv")))
+        logger.info("LOOKING AT {}".format(os.path.join(data_dir, "train.tsv")))
         return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "deliver_qa.out.fix.tsv")), "train")
+            self._read_tsv(os.path.join(data_dir, "train_augment.tsv")), "train")
 
     def get_dev_examples(self, data_dir):
         """See base class."""
         return self._create_examples(
             self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
-
     def get_dev_examples2(self, data_dir):
-        with open(os.path.join(data_dir, "badcase.to20190711.txt"), "r", encoding="utf-8-sig") as f:
+        lines = []
+        with open("./data/badcase.to20190711.txt", "r", encoding="utf-8-sig") as f:
             reader = csv.reader(f, delimiter="\t", quotechar=None)
-            lines = []
             for line in reader:
                 if sys.version_info[0] == 2:
                     line = list(unicode(cell, 'utf-8') for cell in line)
@@ -203,12 +202,10 @@ class MyProcessor(DataProcessor):
         """Creates examples for the training and dev sets."""
         examples = []
         for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
             guid = "%s-%s" % (set_type, i)
-            text_a = line[3]
-            text_b = line[4]
-            label = line[5]
+            text_a = line[0]
+            text_b = line[1]
+            label = line[2]
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples

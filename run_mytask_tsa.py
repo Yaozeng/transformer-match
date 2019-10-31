@@ -34,15 +34,15 @@ from tqdm import tqdm, trange
 
 from file_utils import WEIGHTS_NAME
 from configuration_roberta import RobertaConfig
-from modeling_roberta import RobertaForSequenceClassification
+from modeling_roberta4 import RobertaForSequenceClassification
 from tokenization_roberta import RobertaTokenizer
 
 from optimization import AdamW, WarmupLinearSchedule
 
 from metrics import glue_compute_metrics as compute_metrics
-from processors.glue2 import glue_output_modes as output_modes
-from processors.glue2 import glue_processors as processors
-from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
+from processors.glue import glue_output_modes as output_modes
+from processors.glue import glue_processors as processors
+from processors.glue import glue_convert_examples_to_features as convert_examples_to_features
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,19 @@ def set_seed(args):
     if args.n_gpu > 0:
         torch.cuda.manual_seed_all(args.seed)
 
-
+def get_tsa_threshold(schedule, global_step, num_train_steps, start, end):
+  training_progress = float(global_step) / float(num_train_steps)
+  if schedule == "linear_schedule":
+    threshold = training_progress
+  elif schedule == "exp_schedule":
+    scale = 5
+    threshold = np.exp((training_progress - 1) * scale)
+    # [exp(-5), exp(0)] = [1e-2, 1]
+  elif schedule == "log_schedule":
+    scale = 5
+    # [1 - exp(0), 1 - exp(-5)] = [0, 0.99]
+    threshold = 1 - np.exp((-training_progress) * scale)
+  return threshold * (end - start) + start
 def train(args, train_dataset, model, tokenizer):
     """ Train the model """
     tb_writer = SummaryWriter()
@@ -72,26 +84,11 @@ def train(args, train_dataset, model, tokenizer):
     save_steps=int(args.save_steps*t_total)
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
-    a = []
-    b = []
-    c = []
-    d = []
-    optimizer_grouped_parameters = []
-    for n, p in model.named_parameters():
-        if 'classifier' in n or 'linear_transform' in n:
-            if any(nd in n for nd in no_decay):
-                a.append(p)
-            else:
-                b.append(p)
-        else:
-            if any(nd in n for nd in no_decay):
-                c.append(p)
-            else:
-                d.append(p)
-    optimizer_grouped_parameters.append({"params": a, "weight_decay": 0, "lr": 2e-3})
-    optimizer_grouped_parameters.append({"params": b, "weight_decay": args.weight_decay, "lr": 2e-3})
-    optimizer_grouped_parameters.append({"params": c, "weight_decay": 0})
-    optimizer_grouped_parameters.append({"params": d, "weight_decay": args.weight_decay})
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+         'weight_decay': args.weight_decay},
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+    ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = WarmupLinearSchedule(optimizer, warmup_steps=warm_up_steps, t_total=t_total)
 
@@ -118,13 +115,32 @@ def train(args, train_dataset, model, tokenizer):
         for step, batch in enumerate(epoch_iterator):
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
-            inputs = {'input_ids':      batch[0],
-                      'attention_mask': batch[1],
-                      'align_mask': batch[2],
-                      'labels':         batch[4]}
-            inputs['token_type_ids'] = None
+            inputs = {'input_ids': batch[0],
+                      'attention_mask': batch[1]
+                     } #'labels': batch[3]
+            inputs['token_type_ids'] = None  # XLM, DistilBERT and RoBERTa don't use segment_ids
             outputs = model(**inputs)
-            loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
+            #loss = outputs
+            log_probs = torch.nn.functional.log_softmax(outputs,dim=-1)
+            one_hot_labels = torch.nn.functional.one_hot(batch[3])
+            tgt_label_prob=one_hot_labels
+
+            per_example_loss = -torch.sum(tgt_label_prob * log_probs, dim=-1)
+            loss_mask = torch.ones_like(per_example_loss)
+
+            correct_label_probs = torch.sum(one_hot_labels * torch.exp(log_probs), dim=-1)
+
+            tsa_start = 0.5
+            tsa_threshold = get_tsa_threshold(
+                "exp_schedule", global_step, t_total,
+                tsa_start, end=1)
+
+            larger_than_threshold = torch.gt(correct_label_probs, tsa_threshold)
+            loss_mask = loss_mask * (1.0 - larger_than_threshold.float())
+
+            per_example_loss = per_example_loss * loss_mask
+
+            loss = (torch.sum(per_example_loss) / torch.max(torch.sum(loss_mask), 1))
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -143,8 +159,7 @@ def train(args, train_dataset, model, tokenizer):
 
                 if args.logging_steps > 0 and global_step % args.logging_steps == 0:
                     # Log metrics
-                    tb_writer.add_scalar('lr_n', scheduler.get_lr()[0], global_step)
-                    tb_writer.add_scalar('lr_o', scheduler.get_lr()[2], global_step)
+                    tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
                     tb_writer.add_scalar('loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
                     logging_loss = tr_loss
 
@@ -206,9 +221,9 @@ def evaluate(args, model, tokenizer, prefix=""):
             with torch.no_grad():
                 inputs = {'input_ids': batch[0],
                           'attention_mask': batch[1],
-                          'align_mask': batch[2],
-                          'labels': batch[4]}
-                inputs['token_type_ids'] = None
+                          'labels': batch[3]}
+
+                inputs['token_type_ids'] = None  # XLM, DistilBERT and RoBERTa don't use segment_ids
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
 
@@ -228,7 +243,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             preds = np.squeeze(preds)
         result = compute_metrics(eval_task, preds, out_label_ids)
         results.update(result)
-        results.update({"loss": eval_loss})
+        results.update({"loss":eval_loss})
 
         output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
         with open(output_eval_file, "w") as writer:
@@ -245,7 +260,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask_sfu_augment'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask_augment'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -273,14 +288,13 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     # Convert to Tensors and build dataset
     all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
     all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
-    all_align_mask = torch.tensor([f.align_mask for f in features], dtype=torch.long)
     all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
     if output_mode == "classification":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
     elif output_mode == "regression":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
 
-    dataset = TensorDataset(all_input_ids, all_attention_mask,all_align_mask,all_token_type_ids, all_labels)
+    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
     return dataset
 
 
@@ -292,7 +306,7 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="mytask", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_mytask_sfu_augment", type=str,
+    parser.add_argument("--output_dir", default="output_mytask_augment", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
 
     ## Other parameters

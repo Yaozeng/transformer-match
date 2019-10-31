@@ -34,7 +34,7 @@ from tqdm import tqdm, trange
 
 from file_utils import WEIGHTS_NAME
 from configuration_roberta import RobertaConfig
-from modeling_roberta import RobertaForSequenceClassification
+from modeling_roberta3 import RobertaForSequenceClassification
 from tokenization_roberta import RobertaTokenizer
 
 from optimization import AdamW, WarmupLinearSchedule
@@ -53,7 +53,19 @@ def set_seed(args):
     if args.n_gpu > 0:
         torch.cuda.manual_seed_all(args.seed)
 
-
+def get_tsa_threshold(schedule, global_step, num_train_steps, start, end):
+  training_progress = float(global_step) / float(num_train_steps)
+  if schedule == "linear_schedule":
+    threshold = training_progress
+  elif schedule == "exp_schedule":
+    scale = 5
+    threshold = np.exp((training_progress - 1) * scale)
+    # [exp(-5), exp(0)] = [1e-2, 1]
+  elif schedule == "log_schedule":
+    scale = 5
+    # [1 - exp(0), 1 - exp(-5)] = [0, 0.99]
+    threshold = 1 - np.exp((-training_progress) * scale)
+  return threshold * (end - start) + start
 def train(args, train_dataset, model, tokenizer):
     """ Train the model """
     tb_writer = SummaryWriter()
@@ -120,11 +132,29 @@ def train(args, train_dataset, model, tokenizer):
             batch = tuple(t.to(args.device) for t in batch)
             inputs = {'input_ids':      batch[0],
                       'attention_mask': batch[1],
-                      'align_mask': batch[2],
-                      'labels':         batch[4]}
+                      'align_mask': batch[2]}
             inputs['token_type_ids'] = None
             outputs = model(**inputs)
-            loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
+            log_probs = torch.nn.functional.log_softmax(outputs, dim=-1)
+            one_hot_labels = torch.nn.functional.one_hot(batch[4])
+            tgt_label_prob = one_hot_labels
+
+            per_example_loss = -torch.sum(tgt_label_prob * log_probs, dim=-1)
+            loss_mask = torch.ones_like(per_example_loss)
+
+            correct_label_probs = torch.sum(one_hot_labels * torch.exp(log_probs), dim=-1)
+
+            tsa_start = 0.5
+            tsa_threshold = get_tsa_threshold(
+                "exp_schedule", global_step, t_total,
+                tsa_start, end=1)
+
+            larger_than_threshold = torch.gt(correct_label_probs, tsa_threshold)
+            loss_mask = loss_mask * (1.0 - larger_than_threshold.float())
+
+            per_example_loss = per_example_loss * loss_mask
+
+            loss = (torch.sum(per_example_loss) / torch.max(torch.sum(loss_mask), 1))
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training

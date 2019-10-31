@@ -3,7 +3,7 @@
 
 import random
 from random import shuffle
-
+import collections
 random.seed(1)
 
 # stop words list
@@ -37,21 +37,17 @@ def get_only_chars(line):
     clean_line = ""
 
     line = line.replace("’", "")
-    line = line.replace("'", "")
+    #line = line.replace("'", "")
     line = line.replace("-", " ")  # replace hyphens with spaces
     line = line.replace("\t", " ")
     line = line.replace("\n", " ")
     line = line.lower()
 
-    for char in line:
-        if char in 'qwertyuiopasdfghjklzxcvbnm ':
-            clean_line += char
-        else:
-            clean_line += ' '
-
-    clean_line = re.sub(' +', ' ', clean_line)  # delete extra spaces
+    clean_line = re.sub(' +', ' ', line)  # delete extra spaces
     if clean_line[0] == ' ':
         clean_line = clean_line[1:]
+    if clean_line[-1] == ' ':
+        clean_line = clean_line[0:-1]
     return clean_line
 
 
@@ -61,8 +57,9 @@ def get_only_chars(line):
 ########################################################################
 
 # for the first time you use wordnet
-# import nltk
-# nltk.download('wordnet')
+import nltk
+from nltk import data
+data.path.append(r"D:\nltk_data")
 from nltk.corpus import wordnet
 
 
@@ -73,10 +70,11 @@ def synonym_replacement(words, n):
     num_replaced = 0
     for random_word in random_word_list:
         synonyms = get_synonyms(random_word)
+        #print(synonyms)
         if len(synonyms) >= 1:
-            synonym = random.choice(list(synonyms))
+            synonym = random.choice(synonyms[:3])
             new_words = [synonym if word == random_word else word for word in new_words]
-            # print("replaced", random_word, "with", synonym)
+            #print("replaced", random_word, "with", synonym)
             num_replaced += 1
         if num_replaced >= n:  # only replace up to n words
             break
@@ -89,15 +87,17 @@ def synonym_replacement(words, n):
 
 
 def get_synonyms(word):
-    synonyms = set()
+    synonyms = []
     for syn in wordnet.synsets(word):
         for l in syn.lemmas():
             synonym = l.name().replace("_", " ").replace("-", " ").lower()
-            synonym = "".join([char for char in synonym if char in ' qwertyuiopasdfghjklzxcvbnm'])
-            synonyms.add(synonym)
+            #print(synonym)
+            #synonym = "".join([char for char in synonym if char in ' qwertyuiopasdfghjklzxcvbnm'])
+            synonyms.append(synonym)
     if word in synonyms:
         synonyms.remove(word)
-    return list(synonyms)
+    synonyms = sorted(set(synonyms), key=synonyms.index)
+    return synonyms
 
 
 ########################################################################
@@ -181,7 +181,7 @@ def add_word(new_words):
 ########################################################################
 
 def eda(sentence, alpha_sr=0.1, alpha_ri=0.1, alpha_rs=0.1, p_rd=0.1, num_aug=9):
-    sentence = get_only_chars(sentence)
+    #sentence = get_only_chars(sentence)
     words = sentence.split(' ')
     words = [word for word in words if word is not '']
     num_words = len(words)
@@ -221,6 +221,25 @@ def eda(sentence, alpha_sr=0.1, alpha_ri=0.1, alpha_rs=0.1, p_rd=0.1, num_aug=9)
     else:
         keep_prob = num_aug / len(augmented_sentences)
         augmented_sentences = [s for s in augmented_sentences if random.uniform(0, 1) < keep_prob]
+
+    # append the original sentence
+    augmented_sentences.append(sentence)
+
+    return augmented_sentences
+
+def eda2(sentence, alpha_sr=0.1):
+    sentence = get_only_chars(sentence)
+    words = sentence.split(' ')
+    words = [word for word in words if word is not '']
+    num_words = len(words)
+
+    augmented_sentences = []
+    n_sr = max(1, int(alpha_sr * num_words))
+    # sr
+    a_words = synonym_replacement(words, n_sr)
+    augmented_sentences.append(' '.join(a_words))
+
+    augmented_sentences = [get_only_chars(sentence) for sentence in augmented_sentences]
 
     # append the original sentence
     augmented_sentences.append(sentence)
