@@ -245,7 +245,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask_sfu_augment'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask_sfu'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -292,23 +292,23 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="mytask", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_mytask_sfu_augment", type=str,
+    parser.add_argument("--output_dir", default="output_mytask_sfu", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
 
     ## Other parameters
     parser.add_argument("--max_seq_length", default=64, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
-    parser.add_argument("--do_train", default=True,
+    parser.add_argument("--do_train", default=False,
                         help="Whether to run training.")
     parser.add_argument("--do_eval", default=True,
                         help="Whether to run eval on the dev set.")
-    parser.add_argument("--evaluate_during_training", default=True,
+    parser.add_argument("--evaluate_during_training", default=False,
                         help="Rul evaluation during training at each logging step.")
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-    parser.add_argument("--per_gpu_train_batch_size", default=24, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=16, type=int,
                         help="Batch size per GPU/CPU for training.")
     parser.add_argument("--per_gpu_eval_batch_size", default=24, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
@@ -335,7 +335,7 @@ def main():
                         help="Save checkpoint every X updates steps.")
     parser.add_argument("--eval_all_checkpoints", action='store_true',
                         help="Evaluate all checkpoints starting with the same prefix as model_name ending and ending with step number")
-    parser.add_argument('--overwrite_output_dir', action='store_true',
+    parser.add_argument('--overwrite_output_dir', default=True,
                         help="Overwrite the content of the output directory")
     parser.add_argument('--seed', type=int, default=42,
                         help="random seed for initialization")

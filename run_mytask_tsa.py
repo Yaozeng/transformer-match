@@ -116,31 +116,22 @@ def train(args, train_dataset, model, tokenizer):
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
             inputs = {'input_ids': batch[0],
-                      'attention_mask': batch[1]
-                     } #'labels': batch[3]
+                      'attention_mask': batch[1],
+                      'labels': batch[3]
+                     }
             inputs['token_type_ids'] = None  # XLM, DistilBERT and RoBERTa don't use segment_ids
             outputs = model(**inputs)
-            #loss = outputs
-            log_probs = torch.nn.functional.log_softmax(outputs,dim=-1)
-            one_hot_labels = torch.nn.functional.one_hot(batch[3])
-            tgt_label_prob=one_hot_labels
+            loss = outputs[0]
 
-            per_example_loss = -torch.sum(tgt_label_prob * log_probs, dim=-1)
-            loss_mask = torch.ones_like(per_example_loss)
-
-            correct_label_probs = torch.sum(one_hot_labels * torch.exp(log_probs), dim=-1)
-
+            label_ids = torch.nn.functional.one_hot(batch[3]).float()
             tsa_start = 0.5
             tsa_threshold = get_tsa_threshold(
                 "exp_schedule", global_step, t_total,
                 tsa_start, end=1)
-
-            larger_than_threshold = torch.gt(correct_label_probs, tsa_threshold)
-            loss_mask = loss_mask * (1.0 - larger_than_threshold.float())
-
-            per_example_loss = per_example_loss * loss_mask
-
-            loss = (torch.sum(per_example_loss) / torch.max(torch.sum(loss_mask), 1))
+            larger_than_threshold = torch.exp(-loss) > tsa_threshold
+            loss_mask = torch.ones_like(label_ids) * (1 - larger_than_threshold.float())
+            loss = torch.sum(loss * loss_mask) / torch.max(torch.sum(loss_mask),
+                                                                   torch.tensor(1.0).cuda())
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -260,7 +251,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask_augment'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -306,7 +297,7 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="mytask", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_mytask_augment", type=str,
+    parser.add_argument("--output_dir", default="output_mytask_tsa", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
 
     ## Other parameters
@@ -336,14 +327,14 @@ def main():
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
-    parser.add_argument("--num_train_epochs", default=4.0, type=float,
+    parser.add_argument("--num_train_epochs", default=10.0, type=float,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
     parser.add_argument("--warmup_steps", default=0.06, type=float,
                         help="Linear warmup over warmup_steps.")
 
-    parser.add_argument('--logging_steps', type=int, default=25,
+    parser.add_argument('--logging_steps', type=int, default=10,
                         help="Log every X updates steps.")
     parser.add_argument('--save_steps', type=float, default=0.05,
                         help="Save checkpoint every X updates steps.")

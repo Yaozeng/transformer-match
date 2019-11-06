@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """PyTorch RoBERTa model. """
+#tsa
 
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
@@ -324,7 +325,8 @@ class RobertaForSequenceClassification(BertPreTrainedModel):
         self.roberta = RobertaModel(config)
         self.classifier = RobertaClassificationHead(config)
 
-    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None):
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
+                labels=None):
         outputs = self.roberta(input_ids,
                                attention_mask=attention_mask,
                                token_type_ids=token_type_ids,
@@ -332,21 +334,19 @@ class RobertaForSequenceClassification(BertPreTrainedModel):
                                head_mask=head_mask)
         sequence_output = outputs[0]
         logits = self.classifier(sequence_output)
-        """
+
         outputs = (logits,) + outputs[2:]
         if labels is not None:
             if self.num_labels == 1:
                 #  We are doing regression
-                loss_fct = MSELoss()
+                loss_fct = MSELoss(reduction='none')
                 loss = loss_fct(logits.view(-1), labels.view(-1))
             else:
-                loss_fct = CrossEntropyLoss()
+                loss_fct = CrossEntropyLoss(reduction='none')
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
-        """
-        return logits
 
 
 @add_start_docstrings("""Roberta Model with a multiple choice classification head on top (a linear layer on top of

@@ -165,7 +165,7 @@ class MyProcessor(DataProcessor):
         """See base class."""
         logger.info("LOOKING AT {}".format(os.path.join(data_dir, "train.tsv")))
         return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "train_augment.tsv")), "train")
+            self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
 
     def get_dev_examples(self, data_dir):
         """See base class."""

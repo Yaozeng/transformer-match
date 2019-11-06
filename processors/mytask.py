@@ -20,9 +20,8 @@ import os
 import csv
 import sys
 
-from .utils2 import DataProcessor, InputExample, InputFeatures
+from .mytask_util import DataProcessor, InputExample, InputFeatures
 from file_utils import is_tf_available
-import pandas as pd
 
 if is_tf_available():
     import tensorflow as tf
@@ -90,19 +89,36 @@ def glue_convert_examples_to_features(examples, tokenizer,
             add_special_tokens=True,
             max_length=max_length,
         )
+        inputs2 = tokenizer.encode_plus(
+            example.text_a,
+            example.text_c,
+            add_special_tokens=True,
+            max_length=max_length,
+        )
         input_ids, token_type_ids= inputs["input_ids"], inputs["token_type_ids"]
+        input_ids2, token_type_ids2 = inputs2["input_ids"], inputs2["token_type_ids"]
+
         text_a_len=token_type_ids.count(0)
         text_b_len=len(token_type_ids)-text_a_len
+        text_c_len = len(token_type_ids2) - text_a_len
         # The mask has 1 for real tokens and 0 for padding tokens. Only real
         # tokens are attended to.
         attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+        attention_mask2 = [1 if mask_padding_with_zero else 0] * len(input_ids2)
 
         # Zero-pad up to the sequence length.
         padding_length = max_length - len(input_ids)
+        padding_length2 = max_length - len(input_ids2)
+
         if pad_on_left:
             input_ids = ([pad_token] * padding_length) + input_ids
+            input_ids2 = ([pad_token] * padding_length2) + input_ids2
+
             attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
+            attention_mask2 = ([0 if mask_padding_with_zero else 1] * padding_length2) + attention_mask2
+
             token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
+            token_type_ids2 = ([pad_token_segment_id] * padding_length2) + token_type_ids2
             """
             生成对齐Attention
             p a b
@@ -112,25 +128,58 @@ def glue_convert_examples_to_features(examples, tokenizer,
             align_mask =[[0 if mask_padding_with_zero else 1] *len(input_ids)]*padding_length\
                         +[[0 if mask_padding_with_zero else 1]*(padding_length+text_a_len)+[1 if mask_padding_with_zero else 0]*text_b_len]*text_a_len\
                         +[[0 if mask_padding_with_zero else 1]*padding_length+[1 if mask_padding_with_zero else 0]*text_a_len+[0 if mask_padding_with_zero else 1]*text_b_len]*text_b_len
+            align_mask2 =[[0 if mask_padding_with_zero else 1] *len(input_ids2)]*padding_length2\
+                        +[[0 if mask_padding_with_zero else 1]*(padding_length2+text_a_len)+[1 if mask_padding_with_zero else 0]*text_c_len]*text_a_len\
+                        +[[0 if mask_padding_with_zero else 1]*padding_length2+[1 if mask_padding_with_zero else 0]*text_a_len+[0 if mask_padding_with_zero else 1]*text_c_len]*text_c_len
         else:
             input_ids = input_ids + ([pad_token] * padding_length)
+            input_ids2 = input_ids2 + ([pad_token] * padding_length2)
+
             attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
+            attention_mask2 = attention_mask2 + ([0 if mask_padding_with_zero else 1] * padding_length2)
+
             token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
+            token_type_ids2 = token_type_ids2 + ([pad_token_segment_id] * padding_length2)
+
             align_mask =[[0 if mask_padding_with_zero else 1]*text_a_len+[1 if mask_padding_with_zero else 0]*text_b_len+[0 if mask_padding_with_zero else 1]*padding_length]*text_a_len\
                         +[[1 if mask_padding_with_zero else 0]*text_a_len+[0 if mask_padding_with_zero else 1]*(text_b_len+padding_length)]*text_b_len \
                         +[[0 if mask_padding_with_zero else 1] * len(input_ids)] * padding_length
+            align_mask2 = [[0 if mask_padding_with_zero else 1] * text_a_len + [
+                1 if mask_padding_with_zero else 0] * text_c_len + [
+                              0 if mask_padding_with_zero else 1] * padding_length2] * text_a_len \
+                         + [[1 if mask_padding_with_zero else 0] * text_a_len + [0 if mask_padding_with_zero else 1] * (
+                        text_c_len + padding_length2)] * text_c_len \
+                         + [[0 if mask_padding_with_zero else 1] * len(input_ids2)] * padding_length2
 
         assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
         assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(len(attention_mask), max_length)
         assert len(align_mask[0]) == max_length, "Error with input length {} vs {}".format(len(align_mask[0]), max_length)
         assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(len(token_type_ids), max_length)
 
-        if output_mode == "classification":
-            label = label_map[example.label]
-        elif output_mode == "regression":
-            label = float(example.label)
+        assert len(input_ids2) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
+        assert len(attention_mask2) == max_length, "Error with input length {} vs {}".format(len(attention_mask), max_length)
+        assert len(align_mask2[0]) == max_length, "Error with input length {} vs {}".format(len(align_mask[0]), max_length)
+        assert len(token_type_ids2) == max_length, "Error with input length {} vs {}".format(len(token_type_ids), max_length)
+
+        if example.label is not None:
+            if output_mode == "classification":
+                label = label_map[example.label]
+            elif output_mode == "regression":
+                label = float(example.label)
+            else:
+                raise KeyError(output_mode)
         else:
-            raise KeyError(output_mode)
+            label=None
+
+        if example.label2 is not None:
+            if output_mode == "classification":
+                label2 = label_map[example.label2]
+            elif output_mode == "regression":
+                label2 = float(example.label2)
+            else:
+                raise KeyError(output_mode)
+        else:
+            label2=None
 
         if ex_index < 5:
             logger.info("*** Example ***")
@@ -138,36 +187,26 @@ def glue_convert_examples_to_features(examples, tokenizer,
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
             logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
             logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
-            logger.info("label: %s (id = %d)" % (example.label, label))
+            logger.info("input_ids2: %s" % " ".join([str(x) for x in input_ids2]))
+            logger.info("attention_mask2: %s" % " ".join([str(x) for x in attention_mask2]))
+            logger.info("token_type_ids2: %s" % " ".join([str(x) for x in token_type_ids2]))
+            if label is not None:
+                logger.info("label: %s (id = %d)" % (example.label, label))
+            if label2 is not None:
+                logger.info("label2: %s (id = %d)" % (example.label2, label))
 
         features.append(
                 InputFeatures(input_ids=input_ids,
                               attention_mask=attention_mask,
                               align_mask=align_mask,
                               token_type_ids=token_type_ids,
-                              label=label))
-
-    if is_tf_available() and is_tf_dataset:
-        def gen():
-            for ex in features:
-                yield  ({'input_ids': ex.input_ids,
-                         'attention_mask': ex.attention_mask,
-                         'align_mask':ex.align_mask,
-                         'token_type_ids': ex.token_type_ids},
-                        ex.label)
-
-        return tf.data.Dataset.from_generator(gen,
-            ({'input_ids': tf.int32,
-              'attention_mask': tf.int32,
-              'align_mask':tf.int32,
-              'token_type_ids': tf.int32},
-             tf.int64),
-            ({'input_ids': tf.TensorShape([None]),
-              'attention_mask': tf.TensorShape([None]),
-              'align_mask': tf.TensorShape([None,None]),
-              'token_type_ids': tf.TensorShape([None])},
-             tf.TensorShape([])))
-
+                              label=label,
+                              input_ids2=input_ids2,
+                              attention_mask2=attention_mask2,
+                              align_mask2=align_mask2,
+                              token_type_ids2=token_type_ids2,
+                              label2=label2
+                              ))
     return features
 
 
@@ -192,6 +231,11 @@ class MrpcProcessor(DataProcessor):
         return self._create_examples(
             self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
 
+    def get_test_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(
+            self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
+
     def get_labels(self):
         """See base class."""
         return ["0", "1"]
@@ -205,68 +249,11 @@ class MrpcProcessor(DataProcessor):
             guid = "%s-%s" % (set_type, i)
             text_a = line[3]
             text_b = line[4]
-            label = line[0]
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-        return examples
-class MyProcessor(DataProcessor):
-    """Processor for the MRPC data set (GLUE version)."""
-
-    def get_example_from_tensor_dict(self, tensor_dict):
-        """See base class."""
-        return InputExample(tensor_dict['idx'].numpy(),
-                            tensor_dict['sentence1'].numpy().decode('utf-8'),
-                            tensor_dict['sentence2'].numpy().decode('utf-8'),
-                            str(tensor_dict['label'].numpy()))
-
-    def get_train_examples(self, data_dir):
-        """See base class."""
-        logger.info("LOOKING AT {}".format("./data/train.tsv"))
-        return self._create_examples(
-            self._read_tsv("./data/train.tsv"), "train")
-
-    def get_dev_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv("./data/dev.tsv"), "dev")
-    def get_dev_examples2(self, data_dir):
-        lines = []
-        with open("./data/badcase.to20190711.txt", "r", encoding="utf-8-sig") as f:
-            reader = csv.reader(f, delimiter="\t", quotechar=None)
-            for line in reader:
-                if sys.version_info[0] == 2:
-                    line = list(unicode(cell, 'utf-8') for cell in line)
-                lines.append(line)
-        examples = []
-        for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
-            guid = "%s-%s" % ("dev", i)
-            try:
-                text_a = line[0]
-                text_b = line[1]
-                label = line[2]
-            except IndexError:
-                continue
+            label = line[0] if set_type in ['train','dev'] else None
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples
 
-    def get_labels(self):
-        """See base class."""
-        return ["0", "1"]
-
-    def _create_examples(self, lines, set_type):
-        """Creates examples for the training and dev sets."""
-        examples = []
-        for (i, line) in enumerate(lines):
-            guid = "%s-%s" % (set_type, i)
-            text_a = line[0]
-            text_b = line[1]
-            label = line[2]
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-        return examples
 
 class MnliProcessor(DataProcessor):
     """Processor for the MultiNLI data set (GLUE version)."""
@@ -443,54 +430,13 @@ class QqpProcessor(DataProcessor):
 
     def get_train_examples(self, data_dir):
         """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
+        return self._create_examples(
+            self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
 
     def get_dev_examples(self, data_dir):
         """See base class."""
         return self._create_examples(
             self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
-
-    def get_dev_examples2(self, data_dir):
-        lines = []
-        with open("./data/badcase.to20190711.txt", "r", encoding="utf-8-sig") as f:
-            reader = csv.reader(f, delimiter="\t", quotechar=None)
-            for line in reader:
-                if sys.version_info[0] == 2:
-                    line = list(unicode(cell, 'utf-8') for cell in line)
-                lines.append(line)
-        examples = []
-        for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
-            guid = "%s-%s" % ("dev", i)
-            try:
-                text_a = line[0]
-                text_b = line[1]
-                label = line[2]
-            except IndexError:
-                continue
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-        return examples
-    def get_dev_examples3(self, data_dir):
-        lines = []
-        with open("./data/deliver_qa.out.fix.tsv", "r", encoding="utf-8-sig") as f:
-            reader = csv.reader(f, delimiter="\t", quotechar=None)
-            for line in reader:
-                if sys.version_info[0] == 2:
-                    line = list(unicode(cell, 'utf-8') for cell in line)
-                lines.append(line)
-        examples = []
-        for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
-            guid = "%s-%s" % ("dev", i)
-            text_a = line[3]
-            text_b = line[4]
-            label = line[5]
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-        return examples
 
     def get_labels(self):
         """See base class."""
@@ -504,9 +450,9 @@ class QqpProcessor(DataProcessor):
                 continue
             guid = "%s-%s" % (set_type, line[0])
             try:
-                text_a = line[3]
-                text_b = line[4]
-                label = line[5]
+                text_a = line[3] if set_type in ['train','dev'] else line[1]
+                text_b = line[4] if set_type in ['train','dev'] else line[2]
+                label = line[5] if set_type in ['train','dev'] else None
             except IndexError:
                 continue
             examples.append(
@@ -548,7 +494,7 @@ class QnliProcessor(DataProcessor):
             guid = "%s-%s" % (set_type, line[0])
             text_a = line[1]
             text_b = line[2]
-            label = line[-1]
+            label = line[3] if set_type in ['train','dev'] else None
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples
@@ -630,7 +576,44 @@ class WnliProcessor(DataProcessor):
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples
+class MyProcessor(DataProcessor):
+    """Processor for the MRPC data set (GLUE version)."""
 
+    def get_example_from_tensor_dict(self, tensor_dict):
+        """See base class."""
+        return InputExample(tensor_dict['idx'].numpy(),
+                            tensor_dict['sentence1'].numpy().decode('utf-8'),
+                            tensor_dict['sentence2'].numpy().decode('utf-8'),
+                            str(tensor_dict['label'].numpy()))
+
+    def get_train_examples(self, data_dir):
+        """See base class."""
+        logger.info("LOOKING AT {}".format("./data/train.tsv"))
+        return self._create_examples(
+            self._read_tsv("./data/train.tsv"), "train")
+
+    def get_dev_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(
+            self._read_tsv("./data/dev.tsv"), "dev")
+
+    def get_labels(self):
+        """See base class."""
+        return ["0", "1"]
+
+    def _create_examples(self, lines, set_type):
+        """Creates examples for the training and dev sets."""
+        examples = []
+        for (i, line) in enumerate(lines):
+            guid = "%s-%s" % (set_type, i)
+            text_a = line[0]
+            text_b = line[1]
+            text_c = line[1]
+            label = line[2]
+            labe2 = line[2]
+            examples.append(
+                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label,text_c=text_c,labe2=labe2))
+        return examples
 glue_tasks_num_labels = {
     "cola": 2,
     "mnli": 3,

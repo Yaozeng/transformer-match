@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """PyTorch RoBERTa model. """
-#tsa
 
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
@@ -24,9 +23,8 @@ import logging
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss, MSELoss
-import numpy as np
 
-from modeling_bert4 import BertEmbeddings, BertLayerNorm, BertModel, BertPreTrainedModel, gelu
+from modeling_bert import BertEmbeddings, BertLayerNorm, BertModel, BertPreTrainedModel, gelu
 from configuration_roberta import RobertaConfig
 from file_utils import add_start_docstrings
 
@@ -175,8 +173,7 @@ class RobertaModel(BertModel):
         self.embeddings = RobertaEmbeddings(config)
         self.init_weights()
 
-    def forward(self, input_ids, attention_mask=None, align_mask=None, token_type_ids=None, position_ids=None,
-                head_mask=None):
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None):
         if input_ids[:, 0].sum().item() != 0:
             logger.warning("A sequence with no special tokens has been passed to the RoBERTa model. "
                            "This model requires special tokens in order to work. "
@@ -184,7 +181,6 @@ class RobertaModel(BertModel):
                            "or tokenizer.convert_tokens_to_ids().")
         return super(RobertaModel, self).forward(input_ids,
                                                  attention_mask=attention_mask,
-                                                 align_mask=align_mask,
                                                  token_type_ids=token_type_ids,
                                                  position_ids=position_ids,
                                                  head_mask=head_mask)
@@ -327,12 +323,11 @@ class RobertaForSequenceClassification(BertPreTrainedModel):
 
         self.roberta = RobertaModel(config)
         self.classifier = RobertaClassificationHead(config)
-    def forward(self, input_ids, attention_mask=None, align_mask=None, token_type_ids=None, position_ids=None,
-                head_mask=None,
+
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
                 labels=None):
         outputs = self.roberta(input_ids,
                                attention_mask=attention_mask,
-                               align_mask=align_mask,
                                token_type_ids=token_type_ids,
                                position_ids=position_ids,
                                head_mask=head_mask)
@@ -343,10 +338,10 @@ class RobertaForSequenceClassification(BertPreTrainedModel):
         if labels is not None:
             if self.num_labels == 1:
                 #  We are doing regression
-                loss_fct = MSELoss(reduction='none')
+                loss_fct = MSELoss()
                 loss = loss_fct(logits.view(-1), labels.view(-1))
             else:
-                loss_fct = CrossEntropyLoss(reduction='none')
+                loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 

@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """PyTorch RoBERTa model. """
-#tsa
+#逻辑上有点问题，但在这个问题上可以行得通，需要改成num_labers2和num_labels
 
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
@@ -24,7 +24,6 @@ import logging
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss, MSELoss
-import numpy as np
 
 from modeling_bert4 import BertEmbeddings, BertLayerNorm, BertModel, BertPreTrainedModel, gelu
 from configuration_roberta import RobertaConfig
@@ -327,28 +326,36 @@ class RobertaForSequenceClassification(BertPreTrainedModel):
 
         self.roberta = RobertaModel(config)
         self.classifier = RobertaClassificationHead(config)
-    def forward(self, input_ids, attention_mask=None, align_mask=None, token_type_ids=None, position_ids=None,
+        self.classifier2 = RobertaClassificationHead(config)
+
+    def forward(self, input_ids,input_ids2, attention_mask=None, align_mask=None, token_type_ids=None, position_ids=None,attention_mask2=None, align_mask2=None, token_type_ids2=None,
                 head_mask=None,
-                labels=None):
+                labels=None,labels2=None):
         outputs = self.roberta(input_ids,
                                attention_mask=attention_mask,
                                align_mask=align_mask,
                                token_type_ids=token_type_ids,
                                position_ids=position_ids,
                                head_mask=head_mask)
+        outputs2 = self.roberta(input_ids2,
+                               attention_mask=attention_mask2,
+                               align_mask=align_mask2,
+                               token_type_ids=token_type_ids2,
+                               position_ids=position_ids,
+                               head_mask=head_mask)
         sequence_output = outputs[0]
+        sequence_output2 = outputs2[0]
         logits = self.classifier(sequence_output)
+        logits2 = self.classifier2(sequence_output2)
 
-        outputs = (logits,) + outputs[2:]
-        if labels is not None:
-            if self.num_labels == 1:
-                #  We are doing regression
-                loss_fct = MSELoss(reduction='none')
-                loss = loss_fct(logits.view(-1), labels.view(-1))
-            else:
-                loss_fct = CrossEntropyLoss(reduction='none')
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            outputs = (loss,) + outputs
+        outputs = (logits,logits2,) + outputs[2:]+outputs2[2:]
+        if labels is not None and labels2 is not None:
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            loss_fct2 = CrossEntropyLoss()
+            loss2= loss_fct2(logits2.view(-1, self.num_labels), labels2.view(-1))
+            total_loss=loss+loss2
+            outputs=(total_loss,)+outputs
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
 
@@ -478,3 +485,30 @@ class RobertaClassificationHead(nn.Module):
         x = self.dropout(x)
         x = self.out_proj(x)
         return x
+class RobertaClassificationHead2(nn.Module):
+    """Head for sentence-level classification tasks."""
+
+    def __init__(self, config):
+        super(RobertaClassificationHead2, self).__init__()
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
+        self.dense2 = nn.Linear(config.hidden_size, config.hidden_size)
+        self.dropout2 = nn.Dropout(config.hidden_dropout_prob)
+        self.out_proj2 = nn.Linear(config.hidden_size, config.num_labels2)
+
+    def forward(self, features, **kwargs):
+        x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
+
+        y = self.dropout(x)
+        y = self.dense(y)
+        y = torch.tanh(y)
+        y = self.dropout(y)
+        y = self.out_proj(y)
+
+        x = self.dropout(x)
+        x = self.dense(x)
+        x = torch.tanh(x)
+        x = self.dropout(x)
+        x = self.out_proj(x)
+        return x,y
