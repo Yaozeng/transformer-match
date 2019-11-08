@@ -245,7 +245,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask_sfu'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask_sfu_merge'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -292,18 +292,18 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="mytask", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_mytask_sfu", type=str,
+    parser.add_argument("--output_dir", default="output_mytask_sfu_merge", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
 
     ## Other parameters
     parser.add_argument("--max_seq_length", default=64, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
-    parser.add_argument("--do_train", default=False,
+    parser.add_argument("--do_train", default=True,
                         help="Whether to run training.")
     parser.add_argument("--do_eval", default=True,
                         help="Whether to run eval on the dev set.")
-    parser.add_argument("--evaluate_during_training", default=False,
+    parser.add_argument("--evaluate_during_training", default=True,
                         help="Rul evaluation during training at each logging step.")
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
@@ -372,10 +372,10 @@ def main():
 
     # Load pretrained model and tokenizer
     config_class, model_class, tokenizer_class = RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer
-    config = config_class.from_pretrained("./pretrained/robertalarge/roberta_config.json", num_labels=num_labels,
+    config = config_class.from_pretrained("./pretrained/robertabase/config.json", num_labels=num_labels,
                                           finetuning_task=args.task_name)
-    tokenizer = tokenizer_class.from_pretrained("./pretrained/robertalarge/")
-    model = model_class.from_pretrained("./pretrained/robertalarge/roberta-large-pytorch_model.bin", from_tf=False,
+    tokenizer = tokenizer_class.from_pretrained("./pretrained/robertabase/")
+    model = model_class.from_pretrained("./pretrained/robertabase/roberta-base-pytorch_model.bin", from_tf=False,
                                         config=config)
     model.to(args.device)
 

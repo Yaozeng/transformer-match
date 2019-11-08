@@ -223,12 +223,12 @@ class MyProcessor(DataProcessor):
         """See base class."""
         logger.info("LOOKING AT {}".format("./data/train.tsv"))
         return self._create_examples(
-            self._read_tsv("./data/train.tsv"), "train")
+            self._read_tsv("./data/train_merge.tsv"), "train")
 
     def get_dev_examples(self, data_dir):
         """See base class."""
         return self._create_examples(
-            self._read_tsv("./data/dev.tsv"), "dev")
+            self._read_tsv("./data/dev_merge.tsv"), "dev")
     def get_dev_examples2(self, data_dir):
         lines = []
         with open("./data/badcase.to20190711.txt", "r", encoding="utf-8-sig") as f:

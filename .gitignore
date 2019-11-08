@@ -13,4 +13,5 @@ data/
 !data/.py
 
 .npy
+.txt
 
