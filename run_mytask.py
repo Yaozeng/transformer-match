@@ -228,7 +228,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask_augment'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_mytask_merge'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -274,7 +274,7 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="mytask", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_mytask_augment", type=str,
+    parser.add_argument("--output_dir", default="output_mytask_merge", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
 
     ## Other parameters
@@ -290,7 +290,7 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-    parser.add_argument("--per_gpu_train_batch_size", default=24, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=16, type=int,
                         help="Batch size per GPU/CPU for training.")
     parser.add_argument("--per_gpu_eval_batch_size", default=24, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
@@ -354,10 +354,10 @@ def main():
 
     # Load pretrained model and tokenizer
     config_class, model_class, tokenizer_class = RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer
-    config = config_class.from_pretrained("./pretrained/robertalarge/roberta_config.json", num_labels=num_labels,
+    config = config_class.from_pretrained("./pretrained/robertabase/config.json", num_labels=num_labels,
                                           finetuning_task=args.task_name)
-    tokenizer = tokenizer_class.from_pretrained("./pretrained/robertalarge/")
-    model = model_class.from_pretrained("./pretrained/robertalarge/roberta-large-pytorch_model.bin", from_tf=False,
+    tokenizer = tokenizer_class.from_pretrained("./pretrained/robertabase/")
+    model = model_class.from_pretrained("./pretrained/robertabase/roberta-base-pytorch_model.bin", from_tf=False,
                                         config=config)
     model.to(args.device)
 

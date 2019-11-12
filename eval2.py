@@ -1,11 +1,11 @@
 from file_utils import WEIGHTS_NAME
 from configuration_roberta import RobertaConfig
-from modeling_roberta import RobertaForSequenceClassification
+from modeling_roberta2 import RobertaForSequenceClassification
 from tokenization_roberta import RobertaTokenizer
 import torch
 import numpy as np
-from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
-from processors.utils2 import DataProcessor, InputExample, InputFeatures
+from processors.glue import glue_convert_examples_to_features as convert_examples_to_features
+from processors.utils import DataProcessor, InputExample, InputFeatures
 import xlrd
 import json
 from sklearn.metrics import f1_score
@@ -17,9 +17,9 @@ results=[]
 #paths=["D:\数据/data1.xlsx","D:\数据/data2.xlsx"]
 paths=["./data/data1.xlsx","./data/data2.xlsx"]
 config_class, model_class, tokenizer_class = RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer
-config = config_class.from_pretrained(r"./output_mytask_sfu_merge/config.json")
+config = config_class.from_pretrained(r"./output_mytask_merge/config.json")
 tokenizer = tokenizer_class.from_pretrained(r"./pretrained/robertabase")
-model = model_class.from_pretrained(r"./output_mytask_sfu_merge/pytorch_model.bin", from_tf=False,config=config)
+model = model_class.from_pretrained(r"./output_mytask_merge/pytorch_model.bin", from_tf=False,config=config)
 #config = config_class.from_pretrained(r"D:\代码\服务器代码中转\transformer\pretrained\checkpoint-500\config.json")
 #tokenizer = tokenizer_class.from_pretrained(r"D:\代码\服务器代码中转\transformer\pretrained\robertalarge")
 #model = model_class.from_pretrained(r"D:\代码\服务器代码中转\transformer\pretrained\checkpoint-500\pytorch_model.bin", from_tf=False,config=config)
@@ -71,10 +71,9 @@ for path in paths:
             #print(label.shape)
         all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long).cuda()
         all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long).cuda()
-        all_align_mask = torch.tensor([f.align_mask for f in features], dtype=torch.long).cuda()
         all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long).cuda()
         all_labels = torch.tensor([f.label for f in features], dtype=torch.long).cuda()
-        outputs = model(input_ids=all_input_ids, attention_mask=all_attention_mask, align_mask=all_align_mask,labels=all_labels)
+        outputs = model(input_ids=all_input_ids, attention_mask=all_attention_mask,labels=all_labels)
         logits = outputs[1]
         logits=torch.nn.functional.softmax(logits,dim=-1)
         #print(logits.shape)
@@ -119,6 +118,6 @@ for path in paths:
 #np.save("results.npy",results)
 #np.save("logits.npy",logits_all)
 #np.savetxt("logits.txt",logits_all)
-with open("results.json","w",encoding="utf8") as fout:
+with open("results_roberta.json","w",encoding="utf8") as fout:
     for result in results:
         fout.write(json.dumps(result,ensure_ascii=False)+"\n")

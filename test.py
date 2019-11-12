@@ -1,6 +1,7 @@
 import xlrd
 import pandas as pd
 import numpy as np
+from sklearn.metrics import f1_score
 """
 a=np.load("logits.npy")
 np.set_printoptions(precision=3)
@@ -16,8 +17,13 @@ a=np.load("results.npy")
 print(a)
 np.savetxt("results_digits.txt",a,fmt="%1d")
 """
+"""
 import json
-a=[{"answer":"我爱中国","logits":np.array([[1.0,2.0],[3.0,4.0]]).tolist(),"iscorrect":True},{"answer":"我爱中国","logits":np.array([[1.0,2.0],[3.0,4.0]]).tolist(),"iscorrect":True}]
+a=[{"answer":"我爱中国","logits":np.array([[1.0,2.0],[3.0,4.0]]).tolist(),"iscorrect":str(True)},{"answer":"我爱中国","logits":np.array([[1.0,2.0],[3.0,4.0]]).tolist(),"iscorrect":str(True)}]
 with open("test.json","w",encoding="utf8") as f:
     for b in a:
         f.write(json.dumps(b,ensure_ascii=False)+"\n")
+        """
+a=np.array([1,0,1])
+b=np.array([1,1,1])
+print(f1_score(a,b))
