@@ -80,8 +80,8 @@ def glue_convert_examples_to_features(examples, tokenizer,
     for (ex_index, example) in enumerate(examples):
         if ex_index % 10000 == 0:
             logger.info("Writing example %d" % (ex_index))
-        if is_tf_dataset:
-            example = processor.get_example_from_tensor_dict(example)
+        #if is_tf_dataset:
+        #    example = processor.get_example_from_tensor_dict(example)
 
         inputs = tokenizer.encode_plus(
             example.text_a,
@@ -121,6 +121,7 @@ def glue_convert_examples_to_features(examples, tokenizer,
             logger.info("*** Example ***")
             logger.info("guid: %s" % (example.guid))
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+            logger.info("origin_text: %s" % tokenizer.decoder(input_ids))
             logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
             logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
             logger.info("label: %s (id = %d)" % (example.label, label))
@@ -163,14 +164,14 @@ class MyProcessor(DataProcessor):
 
     def get_train_examples(self, data_dir):
         """See base class."""
-        logger.info("LOOKING AT {}".format("./data/train.tsv"))
+        logger.info("LOOKING AT {}".format(os.path.join(data_dir, "train.tsv")))
         return self._create_examples(
-            self._read_tsv("./data/train_merge.tsv"), "train")
+            self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
 
     def get_dev_examples(self, data_dir):
         """See base class."""
         return self._create_examples(
-            self._read_tsv("./data/dev_merge.tsv"), "dev")
+            self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
     def get_dev_examples2(self, data_dir):
         lines = []
         with open("./data/badcase.to20190711.txt", "r", encoding="utf-8-sig") as f:

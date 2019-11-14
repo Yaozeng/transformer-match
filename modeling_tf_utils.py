@@ -23,8 +23,8 @@ import os
 
 import tensorflow as tf
 
-from .configuration_utils import PretrainedConfig
-from .file_utils import cached_path, WEIGHTS_NAME, TF_WEIGHTS_NAME, TF2_WEIGHTS_NAME
+from configuration_utils import PretrainedConfig
+from file_utils import cached_path, WEIGHTS_NAME, TF_WEIGHTS_NAME, TF2_WEIGHTS_NAME
 
 logger = logging.getLogger(__name__)
 

@@ -27,10 +27,10 @@ from io import open
 import numpy as np
 import tensorflow as tf
 
-from .configuration_bert import BertConfig
-from .modeling_tf_utils import TFPreTrainedModel, get_initializer
-from .file_utils import add_start_docstrings
-from .modeling_tf_pytorch_utils import load_pytorch_checkpoint_in_tf2_model
+from configuration_bert import BertConfig
+from modeling_tf_utils import TFPreTrainedModel, get_initializer
+from file_utils import add_start_docstrings
+from modeling_tf_pytorch_utils import load_pytorch_checkpoint_in_tf2_model
 
 logger = logging.getLogger(__name__)
 

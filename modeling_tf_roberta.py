@@ -23,12 +23,12 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-from .configuration_roberta import RobertaConfig
-from .modeling_tf_utils import TFPreTrainedModel, get_initializer
-from .file_utils import add_start_docstrings
-from .modeling_tf_pytorch_utils import load_pytorch_checkpoint_in_tf2_model
+from configuration_roberta import RobertaConfig
+from modeling_tf_utils import TFPreTrainedModel, get_initializer
+from file_utils import add_start_docstrings
+from modeling_tf_pytorch_utils import load_pytorch_checkpoint_in_tf2_model
 
-from .modeling_tf_bert import TFBertEmbeddings, TFBertMainLayer, gelu, gelu_new
+from modeling_tf_bert import TFBertEmbeddings, TFBertMainLayer, gelu, gelu_new
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ class TFRobertaMainLayer(TFBertMainLayer):
 
     def call(self, inputs, **kwargs):
         # Check that input_ids starts with control token
+        """
         if isinstance(inputs, (tuple, list)):
             input_ids = inputs[0]
         elif isinstance(inputs, dict):
@@ -86,6 +87,7 @@ class TFRobertaMainLayer(TFBertMainLayer):
             logger.warning("A sequence with no special tokens has been passed to the RoBERTa model. "
                            "This model requires special tokens in order to work. "
                            "Please specify add_special_tokens=True in your encoding.")
+        """
 
         return super(TFRobertaMainLayer, self).call(inputs, **kwargs)
 
@@ -378,5 +380,7 @@ class TFRobertaForSequenceClassification(TFRobertaPreTrainedModel):
         logits = self.classifier(sequence_output, training=kwargs.get('training', False))
 
         outputs = (logits,) + outputs[2:]
+
+
 
         return outputs  # logits, (hidden_states), (attentions)
