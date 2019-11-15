@@ -22,6 +22,7 @@ import glob
 import logging
 import os
 import random
+import time
 
 import numpy as np
 import torch
@@ -199,6 +200,7 @@ def evaluate(args, model, tokenizer, prefix=""):
         nb_eval_steps = 0
         preds = None
         out_label_ids = None
+        start_time=time.clock()
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
             model.eval()
             batch = tuple(t.to(args.device) for t in batch)
@@ -220,6 +222,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+        print("bert_align inference time %s" % str(time.clock() - start_time))
 
         eval_loss = eval_loss / nb_eval_steps
         if args.output_mode == "classification":

@@ -43,6 +43,7 @@ from metrics import glue_compute_metrics as compute_metrics
 from processors.glue import glue_output_modes as output_modes
 from processors.glue import glue_processors as processors
 from processors.glue import glue_convert_examples_to_features as convert_examples_to_features
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,7 @@ def evaluate(args, model, tokenizer, prefix=""):
         nb_eval_steps = 0
         preds = None
         out_label_ids = None
+        start_time=time.clock()
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
             model.eval()
             batch = tuple(t.to(args.device) for t in batch)
@@ -203,7 +205,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-
+        print("roberta inference time %s" % str(time.clock() - start_time))
         eval_loss = eval_loss / nb_eval_steps
         if args.output_mode == "classification":
             preds = np.argmax(preds, axis=1)
@@ -317,7 +319,7 @@ def main():
                         help="Save checkpoint every X updates steps.")
     parser.add_argument("--eval_all_checkpoints", action='store_true',
                         help="Evaluate all checkpoints starting with the same prefix as model_name ending and ending with step number")
-    parser.add_argument('--overwrite_output_dir', action='store_true',
+    parser.add_argument('--overwrite_output_dir', default=True,
                         help="Overwrite the content of the output directory")
     parser.add_argument('--seed', type=int, default=42,
                         help="random seed for initialization")

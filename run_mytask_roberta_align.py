@@ -43,6 +43,7 @@ from metrics import glue_compute_metrics as compute_metrics
 from processors.glue2 import glue_output_modes as output_modes
 from processors.glue2 import glue_processors as processors
 from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,7 @@ def evaluate(args, model, tokenizer, prefix=""):
         nb_eval_steps = 0
         preds = None
         out_label_ids = None
+        start_time=time.clock()
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
             model.eval()
             batch = tuple(t.to(args.device) for t in batch)
@@ -220,7 +222,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-
+        print("roberta_align inference time %s" % str(time.clock() - start_time))
         eval_loss = eval_loss / nb_eval_steps
         if args.output_mode == "classification":
             preds = np.argmax(preds, axis=1)
