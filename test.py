@@ -2,6 +2,11 @@ import xlrd
 import pandas as pd
 import numpy as np
 from sklearn.metrics import f1_score
+import tensorflow as tf
+from modeling_tf_roberta import TFRobertaForSequenceClassification
+from configuration_roberta import RobertaConfig
+from tokenization_roberta import RobertaTokenizer
+import h5py
 """
 a=np.load("logits.npy")
 np.set_printoptions(precision=3)
@@ -24,6 +29,11 @@ with open("test.json","w",encoding="utf8") as f:
     for b in a:
         f.write(json.dumps(b,ensure_ascii=False)+"\n")
         """
+"""
 a=np.array([1,0,1])
 b=np.array([1,1,1])
 print(f1_score(a,b))
+"""
+a=512
+b=12
+print(a//b)
