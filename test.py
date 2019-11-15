@@ -34,6 +34,8 @@ a=np.array([1,0,1])
 b=np.array([1,1,1])
 print(f1_score(a,b))
 """
-a=512
-b=12
-print(a//b)
+a=tf.ones([514,768])
+b=tf.ones([16,64],dtype=tf.int32)
+b=tf.reshape(b,[-1])
+c=tf.gather(a,b)
+print(c.shape)

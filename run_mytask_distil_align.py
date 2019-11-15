@@ -56,7 +56,7 @@ def set_seed(args):
 
 def train(args, train_dataset, model, tokenizer):
     """ Train the model """
-    tb_writer = SummaryWriter()
+    tb_writer = SummaryWriter("./runs2/distilbert_align/")
 
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset)
@@ -243,7 +243,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_distilbert_align_{}_{}_mytask_sfu_merge'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_distilbert_{}_{}_align'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -290,7 +290,7 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--task_name", default="mytask", type=str,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
-    parser.add_argument("--output_dir", default="output_distilbert_align_merge", type=str,
+    parser.add_argument("--output_dir", default="distilbert_align", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
 
     ## Other parameters
@@ -320,7 +320,7 @@ def main():
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
-    parser.add_argument("--num_train_epochs", default=4.0, type=float,
+    parser.add_argument("--num_train_epochs", default=3.0, type=float,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
