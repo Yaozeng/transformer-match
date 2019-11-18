@@ -17,9 +17,9 @@ results=[]
 #paths=["D:\数据/data1.xlsx","D:\数据/data2.xlsx"]
 paths=["./data/data1.xlsx","./data/data2.xlsx"]
 config_class, model_class, tokenizer_class = DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer
-config = config_class.from_pretrained("./distilbert_align/config.json")
+config = config_class.from_pretrained("./distilbert_align2/config.json")
 tokenizer = tokenizer_class.from_pretrained("./pretrained/distilbert/")
-model = model_class.from_pretrained("./distilbert_align/pytorch_model.bin", from_tf=False,
+model = model_class.from_pretrained("./distilbert_align2/pytorch_model.bin", from_tf=False,
                                     config=config)
 #config = config_class.from_pretrained(r"D:\代码\服务器代码中转\transformer\pretrained\checkpoint-500\config.json")
 #tokenizer = tokenizer_class.from_pretrained(r"D:\代码\服务器代码中转\transformer\pretrained\robertalarge")
@@ -120,6 +120,6 @@ for path in paths:
 #np.save("results.npy",results)
 #np.save("logits.npy",logits_all)
 #np.savetxt("logits.txt",logits_all)
-with open("./results/results_distilbert_align.json","w",encoding="utf8") as fout:
+with open("./results2/results_distilbert_align.json","w",encoding="utf8") as fout:
     for result in results:
         fout.write(json.dumps(result,ensure_ascii=False)+"\n")

@@ -158,10 +158,10 @@ def file_based_input_fn_builder(input_file, seq_length, is_training,
   return input_fn
 
 
-def create_model(bert_config, input_ids, input_mask, segment_ids, labels, num_labels):
+def create_model(bert_config, input_ids, input_mask,labels, num_labels):
   """Creates a classification model."""
   model = modeling_tf_roberta.TFRobertaForSequenceClassification.from_pretrained("./pretrained/robertabase/roberta-base-tf_model.h5",from_pt=False,config=bert_config)
-  inputs={'input_ids':input_ids,"attention_mask":input_mask,"token_type_ids":segment_ids,"position_ids":None,"head_mask":None}
+  inputs={'input_ids':input_ids,"attention_mask":input_mask}
   outputs=model(inputs)
   logits=outputs[0]
   with tf.variable_scope("loss"):
@@ -188,11 +188,11 @@ def model_fn_builder(bert_config, num_labels, learning_rate,num_train_steps, num
 
     input_ids = features["input_ids"]
     input_mask = features["input_mask"]
-    segment_ids = features["segment_ids"]
+    #segment_ids = features["segment_ids"]
     label_ids = features["label_ids"]
 
     (total_loss, per_example_loss, logits, probabilities) = create_model(
-        bert_config, input_ids, input_mask, segment_ids, label_ids,
+        bert_config, input_ids, input_mask, label_ids,
         num_labels)
 
     output_spec = None
