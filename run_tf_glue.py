@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tokenization_roberta import RobertaTokenizer
 from modeling_tf_roberta import TFRobertaForSequenceClassification
-from modeling_roberta2 import RobertaForSequenceClassification
+from modeling_roberta import RobertaForSequenceClassification
 from configuration_roberta import RobertaConfig
 from processors.glue import glue_convert_examples_to_features,MyProcessor
 

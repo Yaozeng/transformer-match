@@ -33,7 +33,7 @@ from optimization import AdamW, WarmupLinearSchedule
 
 from metrics import glue_compute_metrics as compute_metrics
 from configuration_roberta import RobertaConfig
-from modeling_roberta import RobertaForSequenceClassification
+from modeling_roberta_align import RobertaForSequenceClassification
 from tokenization_roberta import RobertaTokenizer
 from processors.glue2 import glue_output_modes as output_modes
 from processors.glue2 import glue_processors as processors
@@ -72,7 +72,7 @@ def train(args, train_dataset, model, tokenizer):
     d=[]
     optimizer_grouped_parameters=[]
     for n, p in model.named_parameters():
-        if 'classifier' in n or 'linear_transform' in n:
+        if 'classifier' in n or 'linear_r' in n or 'linear_g' in n:
             if any(nd in n for nd in no_decay):
                 a.append(p)
             else:

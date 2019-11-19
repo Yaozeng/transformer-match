@@ -1,6 +1,6 @@
 from file_utils import WEIGHTS_NAME
 from configuration_bert import BertConfig
-from modeling_bert4 import BertForSequenceClassification
+from modeling_bert_align import BertForSequenceClassification
 from tokenization_bert import BertTokenizer
 import torch
 import numpy as np

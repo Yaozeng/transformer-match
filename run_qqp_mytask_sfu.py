@@ -34,7 +34,7 @@ from tqdm import tqdm, trange
 
 from file_utils import WEIGHTS_NAME
 from configuration_roberta import RobertaConfig
-from modeling_roberta import RobertaForSequenceClassification
+from modeling_roberta_align import RobertaForSequenceClassification
 from tokenization_roberta import RobertaTokenizer
 
 from optimization import AdamW, WarmupLinearSchedule
@@ -78,7 +78,7 @@ def train(args, train_dataset, model, tokenizer):
     d = []
     optimizer_grouped_parameters = []
     for n, p in model.named_parameters():
-        if 'classifier' in n or 'linear_transform' in n:
+        if 'classifier' in n or 'linear_r' in n or 'linear_g' in n:
             if any(nd in n for nd in no_decay):
                 a.append(p)
             else:

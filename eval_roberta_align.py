@@ -1,6 +1,6 @@
 from file_utils import WEIGHTS_NAME
 from configuration_roberta import RobertaConfig
-from modeling_roberta import RobertaForSequenceClassification
+from modeling_roberta_align import RobertaForSequenceClassification
 from tokenization_roberta import RobertaTokenizer
 import torch
 import numpy as np

@@ -34,7 +34,7 @@ from tqdm import tqdm, trange
 
 from file_utils import WEIGHTS_NAME
 from configuration_roberta import RobertaConfig
-from modeling_roberta import RobertaForSequenceClassification
+from modeling_roberta_align import RobertaForSequenceClassification
 from tokenization_roberta import RobertaTokenizer
 
 from optimization import AdamW, WarmupLinearSchedule
@@ -57,7 +57,7 @@ def set_seed(args):
 
 def train(args, train_dataset, model, tokenizer):
     """ Train the model """
-    tb_writer = SummaryWriter("./runs3/roberta_align/")
+    tb_writer = SummaryWriter("./runs2/roberta_align/")
 
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset)
@@ -79,7 +79,7 @@ def train(args, train_dataset, model, tokenizer):
     d = []
     optimizer_grouped_parameters = []
     for n, p in model.named_parameters():
-        if 'classifier' in n or 'linear_transform' in n:
+        if 'classifier' in n or 'linear_r' in n or 'linear_g' in n:
             if any(nd in n for nd in no_decay):
                 a.append(p)
             else:

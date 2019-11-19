@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss, MSELoss
 
-from modeling_bert4 import BertEmbeddings, BertLayerNorm, BertModel, BertPreTrainedModel, gelu
+from modeling_bert_align import BertEmbeddings, BertLayerNorm, BertModel, BertPreTrainedModel, gelu
 from configuration_roberta import RobertaConfig
 from file_utils import add_start_docstrings
 

@@ -34,9 +34,9 @@ a=np.array([1,0,1])
 b=np.array([1,1,1])
 print(f1_score(a,b))
 """
-a=tf.ones([2,4,6])
-b=tf.ones([4,6])[tf.newaxis,:,:]
-c=a+b
-with tf.Session() as sess:
-    d=sess.run(c)
-    print(d)
+b=[1,2,3]
+a=np.array([1,2,3])
+c=np.array(b,dtype=np.int)
+print(a.dtype)
+print(b)
+print(c)

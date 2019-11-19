@@ -57,7 +57,7 @@ def set_seed(args):
 
 def train(args, train_dataset, model, tokenizer):
     """ Train the model """
-    tb_writer = SummaryWriter("./runs3/distilbert_align/")
+    tb_writer = SummaryWriter("./runs2/distilbert_align/")
 
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset)
@@ -79,7 +79,7 @@ def train(args, train_dataset, model, tokenizer):
     d = []
     optimizer_grouped_parameters = []
     for n, p in model.named_parameters():
-        if 'classifier' in n or 'linear_transform' in n:
+        if 'classifier' in n or 'linear_r' in n or 'linear_g' in n:
             if any(nd in n for nd in no_decay):
                 a.append(p)
             else:

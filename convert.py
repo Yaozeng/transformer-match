@@ -28,10 +28,10 @@ from modeling_bert import (BertConfig, BertEncoder,
                                         BertModel, BertOutput,
                                         BertSelfAttention,
                                         BertSelfOutput)
-from modeling_roberta import (RobertaEmbeddings,
-                                           RobertaForMaskedLM,
-                                           RobertaForSequenceClassification,
-                                           RobertaModel)
+from modeling_roberta_align import (RobertaEmbeddings,
+                                    RobertaForMaskedLM,
+                                    RobertaForSequenceClassification,
+                                    RobertaModel)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
