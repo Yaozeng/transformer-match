@@ -24,6 +24,7 @@ import os
 import random
 
 import numpy as np
+from sklearn import metrics
 import torch
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
@@ -211,6 +212,18 @@ def evaluate(args, model, tokenizer, prefix=""):
             preds = np.argmax(preds, axis=1)
         elif args.output_mode == "regression":
             preds = np.squeeze(preds)
+        confusion_matrix = metrics.confusion_matrix(y_true=out_label_ids, y_pred=preds)
+        tn = confusion_matrix[0, 0]
+        fp = confusion_matrix[0, 1]
+        fn = confusion_matrix[1, 0]
+        tp = confusion_matrix[1, 1]
+        p = tp / (tp + fp)
+        r = tp / (tp + fn)
+        print(tp)
+        print(fp)
+        print(fn)
+        print(tn)
+        print(1.25 * p * r / (0.25 * p + r))
         result = compute_metrics(eval_task, preds, out_label_ids)
         results.update(result)
         results.update({"loss":eval_loss})
@@ -230,7 +243,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_last'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -240,7 +253,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     else:
         logger.info("Creating features from dataset file at %s", args.data_dir)
         label_list = processor.get_labels()
-        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(
+        examples = processor.get_dev_examples2(args.data_dir) if evaluate else processor.get_train_examples(
             args.data_dir)
         features = convert_examples_to_features(examples,
                                                 tokenizer,
@@ -283,11 +296,11 @@ def main():
     parser.add_argument("--max_seq_length", default=64, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
-    parser.add_argument("--do_train", default=True,
+    parser.add_argument("--do_train", default=False,
                         help="Whether to run training.")
     parser.add_argument("--do_eval", default=True,
                         help="Whether to run eval on the dev set.")
-    parser.add_argument("--evaluate_during_training", default=True,
+    parser.add_argument("--evaluate_during_training", default=False,
                         help="Rul evaluation during training at each logging step.")
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")

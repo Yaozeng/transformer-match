@@ -231,7 +231,7 @@ class MyProcessor(DataProcessor):
             self._read_tsv("./data/dev_merge.tsv"), "dev")
     def get_dev_examples2(self, data_dir):
         lines = []
-        with open("./data/badcase.to20190711.txt", "r", encoding="utf-8-sig") as f:
+        with open("data/sts-testset-20191112-fix.tsv", "r", encoding="utf-8-sig") as f:
             reader = csv.reader(f, delimiter="\t", quotechar=None)
             for line in reader:
                 if sys.version_info[0] == 2:
@@ -243,9 +243,9 @@ class MyProcessor(DataProcessor):
                 continue
             guid = "%s-%s" % ("dev", i)
             try:
-                text_a = line[0]
-                text_b = line[1]
-                label = line[2]
+                text_a = line[3]
+                text_b = line[4]
+                label = line[5]
             except IndexError:
                 continue
             examples.append(

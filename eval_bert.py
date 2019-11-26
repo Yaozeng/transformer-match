@@ -11,11 +11,16 @@ import json
 from sklearn.metrics import f1_score
 
 all_count=0
+fp=0
+fn=0
+tp=0
+tn=0
 correct=0
 results=[]
 #logits_all=None
 #paths=["D:\数据/data1.xlsx","D:\数据/data2.xlsx"]
 paths=["./data/data1.xlsx","./data/data2.xlsx"]
+
 config_class, model_class, tokenizer_class = BertConfig, BertForSequenceClassification, BertTokenizer
 config = config_class.from_pretrained(r"./bert/config.json")
 tokenizer = tokenizer_class.from_pretrained(r"./pretrained/bertbase")
@@ -101,6 +106,14 @@ for path in paths:
                 #print(labels.shape)
         output=np.argmax(output,axis=1)
         correct+=int(np.any(output==labels))
+        if int(np.any(output==labels))==1 and labels[0]==1:
+            tp+=1
+        if int(np.any(output == labels)) == 1 and labels[0] == 0:
+            tn+=1
+        if int(np.any(output == labels)) == 0 and labels[0] == 1:
+            fn+=1
+        if int(np.any(output == labels)) == 0 and labels[0] == 0:
+            fp+=1
         """
         if labels[0]==1:
             correct+=int(np.any(output==labels))
@@ -111,13 +124,20 @@ for path in paths:
         results.append({"answer": table.row_values(j)[4], "ref": table.row_values(j)[6],
                         "logits": logits.detach().cpu().numpy().tolist(), "label": int(labels[0]),
                         "iscorrect": int(np.any(output == labels))})
-        print(correct)
-        print(all_count)
-        print(correct / all_count)
+        #print(correct)
+        #print(all_count)
+        #print(correct / all_count)
 #print(correct/all_count)
 #np.save("results.npy",results)
 #np.save("logits.npy",logits_all)
 #np.savetxt("logits.txt",logits_all)
+p=tp/(tp+fp)
+r=tp/(tp+fn)
+print(tp)
+print(fp)
+print(fn)
+print(tn)
+print(1.25*p*r/(0.25*p+r))
 with open("./results/results_bert.json","w",encoding="utf8") as fout:
     for result in results:
         fout.write(json.dumps(result,ensure_ascii=False)+"\n")

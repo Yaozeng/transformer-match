@@ -12,6 +12,10 @@ from sklearn.metrics import f1_score
 
 all_count=0
 correct=0
+fp=0
+fn=0
+tp=0
+tn=0
 results=[]
 #logits_all=None
 #paths=["D:\数据/data1.xlsx","D:\数据/data2.xlsx"]
@@ -102,6 +106,14 @@ for path in paths:
                 #print(labels.shape)
         output=np.argmax(output,axis=1)
         correct+=int(np.any(output==labels))
+        if int(np.any(output==labels))==1 and labels[0]==1:
+            tp+=1
+        if int(np.any(output == labels)) == 1 and labels[0] == 0:
+            tn+=1
+        if int(np.any(output == labels)) == 0 and labels[0] == 1:
+            fn+=1
+        if int(np.any(output == labels)) == 0 and labels[0] == 0:
+            fp+=1
         """
         if labels[0]==1:
             correct+=int(np.any(output==labels))
@@ -119,6 +131,13 @@ for path in paths:
 #np.save("results.npy",results)
 #np.save("logits.npy",logits_all)
 #np.savetxt("logits.txt",logits_all)
+p=tp/(tp+fp)
+r=tp/(tp+fn)
+print(tp)
+print(fp)
+print(fn)
+print(tn)
+print(1.25*p*r/(0.25*p+r))
 with open("./results/results_distilbert.json","w",encoding="utf8") as fout:
     for result in results:
         fout.write(json.dumps(result,ensure_ascii=False)+"\n")

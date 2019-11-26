@@ -34,9 +34,23 @@ a=np.array([1,0,1])
 b=np.array([1,1,1])
 print(f1_score(a,b))
 """
-b=[1,2,3]
-a=np.array([1,2,3])
-c=np.array(b,dtype=np.int)
-print(a.dtype)
-print(b)
-print(c)
+import csv
+import sys
+lines=[]
+with open("data/sts-testset-20191112-fix.tsv", "r", encoding="utf-8-sig") as f:
+    reader = csv.reader(f, delimiter="\t", quotechar=None)
+    for line in reader:
+        if sys.version_info[0] == 2:
+            line = list(unicode(cell, 'utf-8') for cell in line)
+        lines.append(line)
+examples = []
+for (i, line) in enumerate(lines):
+    if i == 0:
+        continue
+    guid = "%s-%s" % ("dev", i)
+    text_a = line[3]
+    text_b = line[4]
+    label = line[5]
+    print(text_a)
+    print(text_b)
+    print(label)
