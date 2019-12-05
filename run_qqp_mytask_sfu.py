@@ -40,9 +40,9 @@ from tokenization_roberta import RobertaTokenizer
 from optimization import AdamW, WarmupLinearSchedule
 
 from metrics import glue_compute_metrics as compute_metrics
-from processors.glue2 import glue_output_modes as output_modes
-from processors.glue2 import glue_processors as processors
-from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
+from processors.glue_align import glue_output_modes as output_modes
+from processors.glue_align import glue_processors as processors
+from processors.glue_align import glue_convert_examples_to_features as convert_examples_to_features
 
 logger = logging.getLogger(__name__)
 

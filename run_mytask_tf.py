@@ -23,7 +23,7 @@ import csv
 import os
 import configuration_roberta
 import modeling_tf_roberta
-import optimization2
+import optimization_tf
 import tokenization_roberta
 import tensorflow as tf
 from processors.glue import *
@@ -198,7 +198,7 @@ def model_fn_builder(bert_config, num_labels, learning_rate,num_train_steps, num
     output_spec = None
     if mode == tf.estimator.ModeKeys.TRAIN:
 
-      train_op = optimization2.create_optimizer(
+      train_op = optimization_tf.create_optimizer(
           total_loss, learning_rate, num_train_steps, num_warmup_steps)
 
       output_spec = tf.estimator.EstimatorSpec(

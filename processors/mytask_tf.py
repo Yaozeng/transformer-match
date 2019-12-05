@@ -18,7 +18,7 @@
 import logging
 import os
 
-from processors.utils2 import DataProcessor, InputExample, InputFeatures
+from processors.utils_align import DataProcessor, InputExample, InputFeatures
 import tensorflow as tf
 import numpy as np
 

@@ -35,9 +35,9 @@ from metrics import glue_compute_metrics as compute_metrics
 from configuration_bert import BertConfig
 from modeling_bert7 import BertForSequenceClassification
 from tokenization_bert import BertTokenizer
-from processors.glue2 import glue_output_modes as output_modes
-from processors.glue2 import glue_processors as processors
-from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
+from processors.glue_align import glue_output_modes as output_modes
+from processors.glue_align import glue_processors as processors
+from processors.glue_align import glue_convert_examples_to_features as convert_examples_to_features
 from file_utils import WEIGHTS_NAME
 
 logger = logging.getLogger(__name__)

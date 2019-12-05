@@ -4,8 +4,8 @@ from modeling_roberta_align import RobertaForSequenceClassification
 from tokenization_roberta import RobertaTokenizer
 import torch
 import numpy as np
-from processors.glue2 import glue_convert_examples_to_features as convert_examples_to_features
-from processors.utils2 import DataProcessor, InputExample, InputFeatures
+from processors.glue_align import glue_convert_examples_to_features as convert_examples_to_features
+from processors.utils_align import DataProcessor, InputExample, InputFeatures
 import xlrd
 import json
 from sklearn.metrics import f1_score

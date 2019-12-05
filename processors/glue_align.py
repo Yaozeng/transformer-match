@@ -20,7 +20,7 @@ import os
 import csv
 import sys
 
-from .utils2 import DataProcessor, InputExample, InputFeatures
+from .utils_align import DataProcessor, InputExample, InputFeatures
 from file_utils import is_tf_available
 import pandas as pd
 
@@ -220,6 +220,12 @@ class MyProcessor(DataProcessor):
                             str(tensor_dict['label'].numpy()))
 
     def get_train_examples(self, data_dir):
+        """See base class."""
+        logger.info("LOOKING AT {}".format("./data/train.tsv"))
+        return self._create_examples(
+            self._read_tsv("./data/train_merge.tsv"), "train")
+
+    def get_train_examples2(self, data_dir):
         """See base class."""
         logger.info("LOOKING AT {}".format("./data/train.tsv"))
         return self._create_examples(

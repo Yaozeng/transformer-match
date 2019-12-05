@@ -243,7 +243,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_last'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_roberta_{}_{}_qqpmerge'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -305,7 +305,7 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-    parser.add_argument("--per_gpu_train_batch_size", default=16, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=32, type=int,
                         help="Batch size per GPU/CPU for training.")
     parser.add_argument("--per_gpu_eval_batch_size", default=24, type=int,
                         help="Batch size per GPU/CPU for evaluation.")

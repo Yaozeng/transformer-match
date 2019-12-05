@@ -18,7 +18,7 @@
 import logging
 import os
 
-from .utils2 import DataProcessor, InputExample, InputFeatures
+from .utils_align import DataProcessor, InputExample, InputFeatures
 from file_utils import is_tf_available
 
 if is_tf_available():

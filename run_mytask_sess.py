@@ -1,6 +1,6 @@
 import tensorflow as tf
 from modeling_tf_roberta import TFRobertaForSequenceClassification
-from optimization2 import AdamWeightDecayOptimizer
+from optimization_tf import AdamWeightDecayOptimizer
 import time
 import logging
 import json
