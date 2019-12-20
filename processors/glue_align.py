@@ -223,13 +223,13 @@ class MyProcessor(DataProcessor):
         """See base class."""
         logger.info("LOOKING AT {}".format("./data/train.tsv"))
         return self._create_examples(
-            self._read_tsv("./data/train_merge.tsv"), "train")
+            self._read_tsv("./data/train-dev-paraphrase-data.train.txt"), "train")
 
     def get_train_examples2(self, data_dir):
         """See base class."""
         logger.info("LOOKING AT {}".format("./data/train.tsv"))
         return self._create_examples(
-            self._read_tsv("./data/train_merge.tsv"), "train")
+            self._read_tsv("./data/train-dev-paraphrase-data.train.txt"), "train")
 
     def get_dev_examples(self, data_dir):
         """See base class."""
@@ -267,9 +267,9 @@ class MyProcessor(DataProcessor):
         examples = []
         for (i, line) in enumerate(lines):
             guid = "%s-%s" % (set_type, i)
-            text_a = line[0]
-            text_b = line[1]
-            label = line[2]
+            text_a = line[3]
+            text_b = line[4]
+            label = line[5]
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples

@@ -229,18 +229,6 @@ def evaluate(args, model, tokenizer, prefix=""):
             preds = np.argmax(preds, axis=1)
         elif args.output_mode == "regression":
             preds = np.squeeze(preds)
-        confusion_matrix = metrics.confusion_matrix(y_true=out_label_ids, y_pred=preds)
-        tn = confusion_matrix[0, 0]
-        fp = confusion_matrix[0, 1]
-        fn = confusion_matrix[1, 0]
-        tp = confusion_matrix[1, 1]
-        p = tp / (tp + fp)
-        r = tp / (tp + fn)
-        print(tp)
-        print(fp)
-        print(fn)
-        print(tn)
-        print(1.25 * p * r / (0.25 * p + r))
         result = compute_metrics(eval_task, preds, out_label_ids)
         results.update(result)
         results.update({"loss": eval_loss})

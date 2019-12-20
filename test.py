@@ -37,7 +37,7 @@ print(f1_score(a,b))
 import csv
 import sys
 lines=[]
-with open("data/sts-testset-20191112-fix.tsv", "r", encoding="utf-8-sig") as f:
+with open("data/train-dev-paraphrase-data.train.txt", "r", encoding="utf-8-sig") as f:
     reader = csv.reader(f, delimiter="\t", quotechar=None)
     for line in reader:
         if sys.version_info[0] == 2:

@@ -34,7 +34,7 @@ from optimization import AdamW, WarmupLinearSchedule
 
 from metrics import glue_compute_metrics as compute_metrics
 from configuration_bert import BertConfig
-from modeling_bert3 import BertForSequenceClassification
+from modeling_bert_concat import BertForSequenceClassification
 from tokenization_bert import BertTokenizer
 from processors.glue_align import glue_output_modes as output_modes
 from processors.glue_align import glue_processors as processors

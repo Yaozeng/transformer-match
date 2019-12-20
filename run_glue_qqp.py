@@ -22,26 +22,31 @@ import glob
 import logging
 import os
 import random
+import time
 
 import numpy as np
 import torch
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
+#from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
+
+
 from tqdm import tqdm, trange
+
+from file_utils import WEIGHTS_NAME
+from configuration_bert import BertConfig
+from modeling_bert import BertForSequenceClassification
+from tokenization_bert import BertTokenizer
 
 from optimization import AdamW, WarmupLinearSchedule
 
 from metrics import glue_compute_metrics as compute_metrics
-from configuration_bert import BertConfig
-from modeling_bert2 import BertForSequenceClassification
-from tokenization_bert import BertTokenizer
-from processors.glue_align import glue_output_modes as output_modes
-from processors.glue_align import glue_processors as processors
-from processors.glue_align import glue_convert_examples_to_features as convert_examples_to_features
-from file_utils import WEIGHTS_NAME
+from processors.glue import glue_output_modes as output_modes
+from processors.glue import glue_processors as processors
+from processors.glue import glue_convert_examples_to_features as convert_examples_to_features
 
 logger = logging.getLogger(__name__)
-
 
 def set_seed(args):
     random.seed(args.seed)
@@ -53,6 +58,8 @@ def set_seed(args):
 
 def train(args, train_dataset, model, tokenizer):
     """ Train the model """
+    tb_writer = SummaryWriter("./run_bert_qqp")
+
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
@@ -63,8 +70,7 @@ def train(args, train_dataset, model, tokenizer):
     else:
         t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
-    warm_up_steps=int(args.warmup_steps*t_total)
-    logging_steps=int(args.logging_steps*t_total)
+    warm_up_steps = int(args.warmup_steps * t_total)
     save_steps=int(args.save_steps*t_total)
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
@@ -85,12 +91,11 @@ def train(args, train_dataset, model, tokenizer):
     logger.info("  Num examples = %d", len(train_dataset))
     logger.info("  Num Epochs = %d", args.num_train_epochs)
     logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
+    logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d",args.train_batch_size * args.gradient_accumulation_steps)
     logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
     logger.info("  Total optimization steps = %d", t_total)
 
     global_step = 0
-    max_acc=0
-    max_f1=0
     tr_loss, logging_loss = 0.0, 0.0
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
@@ -102,9 +107,8 @@ def train(args, train_dataset, model, tokenizer):
             batch = tuple(t.to(args.device) for t in batch)
             inputs = {'input_ids': batch[0],
                       'attention_mask': batch[1],
-                      'align_mask': batch[2],
-                      'labels': batch[4]}
-            inputs['token_type_ids'] = batch[3]
+                      'labels': batch[3]}
+            inputs['token_type_ids'] = batch[2]  # XLM, DistilBERT and RoBERTa don't use segment_ids
             outputs = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
 
@@ -114,33 +118,27 @@ def train(args, train_dataset, model, tokenizer):
                 loss = loss / args.gradient_accumulation_steps
 
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
             tr_loss += loss.item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
                 scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
 
-                if logging_steps > 0 and global_step % logging_steps == 0:
-                    if args.evaluate_during_training:
-                        results = evaluate(args, model, tokenizer)
-                        for key, value in results.items():
-                            if key == "acc":
-                                max_acc = max([max_acc, value])
-                                with open(os.path.join(args.output_dir, "acc.txt"), 'a+') as w:
-                                    w.write("%d\t%f\t%f\n" % (global_step, value, max_acc))
-                            if key == "f1":
-                                max_f1 = max([max_f1, value])
-                                with open(os.path.join(args.output_dir, "f1.txt"), 'a+') as w:
-                                    w.write("%d\t%f\t%f\n" % (global_step, value, max_f1))
-                    with open(os.path.join(args.output_dir, "loss.txt"), 'a+') as w:
-                        w.write("%d\t%f\n" % (global_step, (tr_loss - logging_loss) / logging_steps))
+                if args.logging_steps > 0 and global_step % args.logging_steps == 0:
+                    # Log metrics
+                    tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
+                    tb_writer.add_scalar('loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
                     logging_loss = tr_loss
 
                 if save_steps > 0 and global_step % save_steps == 0:
                     # Save model checkpoint
+                    if args.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
+                        results = evaluate(args, model, tokenizer)
+                        for key, value in results.items():
+                            tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
                     output_dir = os.path.join(args.output_dir, 'checkpoint-{}'.format(global_step))
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
@@ -156,6 +154,7 @@ def train(args, train_dataset, model, tokenizer):
         if args.max_steps > 0 and global_step > args.max_steps:
             train_iterator.close()
             break
+    tb_writer.close()
 
     return global_step, tr_loss / global_step
 
@@ -185,6 +184,7 @@ def evaluate(args, model, tokenizer, prefix=""):
         nb_eval_steps = 0
         preds = None
         out_label_ids = None
+        start_time=time.clock()
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
             model.eval()
             batch = tuple(t.to(args.device) for t in batch)
@@ -192,9 +192,9 @@ def evaluate(args, model, tokenizer, prefix=""):
             with torch.no_grad():
                 inputs = {'input_ids': batch[0],
                           'attention_mask': batch[1],
-                          'align_mask': batch[2],
-                          'labels': batch[4]}
-                inputs['token_type_ids'] = batch[3]
+                          'labels': batch[3]}
+
+                inputs['token_type_ids'] = batch[2]  # XLM, DistilBERT and RoBERTa don't use segment_ids
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
 
@@ -206,6 +206,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+        print("bert inference time %s"%str(time.clock()-start_time))
 
         eval_loss = eval_loss / nb_eval_steps
         if args.output_mode == "classification":
@@ -214,9 +215,10 @@ def evaluate(args, model, tokenizer, prefix=""):
             preds = np.squeeze(preds)
         result = compute_metrics(eval_task, preds, out_label_ids)
         results.update(result)
+        results.update({"loss":eval_loss})
 
-        output_eval_file = os.path.join(eval_output_dir, "eval_results.txt")
-        with open(output_eval_file, "a+") as writer:
+        output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
+        with open(output_eval_file, "w") as writer:
             logger.info("***** Eval results {} *****".format(prefix))
             for key in sorted(result.keys()):
                 logger.info("  %s = %s", key, str(result[key]))
@@ -226,10 +228,11 @@ def evaluate(args, model, tokenizer, prefix=""):
 
 
 def load_and_cache_examples(args, task, tokenizer, evaluate=False):
+
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_bert_align_{}_{}'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_bert_{}_{}'.format(
         'dev' if evaluate else 'train',
         str(args.max_seq_length),
         str(task)))
@@ -246,7 +249,8 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
                                                 label_list=label_list,
                                                 max_length=args.max_seq_length,
                                                 output_mode=output_mode,
-                                                pad_on_left=False,  # pad on the left for xlnet
+                                                pad_on_left=False,
+                                                # pad on the left for xlnet
                                                 pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
                                                 pad_token_segment_id=0,
                                                 )
@@ -256,14 +260,13 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     # Convert to Tensors and build dataset
     all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
     all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
-    all_align_mask = torch.tensor([f.align_mask for f in features], dtype=torch.long)
     all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
     if output_mode == "classification":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
     elif output_mode == "regression":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
 
-    dataset = TensorDataset(all_input_ids, all_attention_mask, all_align_mask, all_token_type_ids, all_labels)
+    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
     return dataset
 
 
@@ -277,8 +280,9 @@ def main():
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
     parser.add_argument("--output_dir", default="output_qqp", type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
+
     ## Other parameters
-    parser.add_argument("--max_seq_length", default=65, type=int,
+    parser.add_argument("--max_seq_length", default=128, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--do_train", default=True,
@@ -290,19 +294,19 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-    parser.add_argument("--per_gpu_train_batch_size", default=64, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=32, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=128, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=32, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
-    parser.add_argument("--learning_rate", default=3e-5, type=float,
+    parser.add_argument("--learning_rate", default=2e-5, type=float,
                         help="The initial learning rate for Adam.")
-    parser.add_argument("--weight_decay", default=1e-5, type=float,
+    parser.add_argument("--weight_decay", default=0.01, type=float,
                         help="Weight deay if we apply some.")
-    parser.add_argument("--adam_epsilon", default=1e-8, type=float,
+    parser.add_argument("--adam_epsilon", default=1e-6, type=float,
                         help="Epsilon for Adam optimizer.")
-    parser.add_argument("--max_grad_norm", default=5.0, type=float,
+    parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
     parser.add_argument("--num_train_epochs", default=3.0, type=float,
                         help="Total number of training epochs to perform.")
@@ -311,11 +315,11 @@ def main():
     parser.add_argument("--warmup_steps", default=0.1, type=float,
                         help="Linear warmup over warmup_steps.")
 
-    parser.add_argument('--logging_steps', type=float, default=0.1,
+    parser.add_argument('--logging_steps', type=int, default=25,
                         help="Log every X updates steps.")
-    parser.add_argument('--save_steps', type=float, default=0.1,
+    parser.add_argument('--save_steps', type=float, default=0.05,
                         help="Save checkpoint every X updates steps.")
-    parser.add_argument("--eval_all_checkpoints", default=False,
+    parser.add_argument("--eval_all_checkpoints", action='store_true',
                         help="Evaluate all checkpoints starting with the same prefix as model_name ending and ending with step number")
     parser.add_argument('--overwrite_output_dir', default=True,
                         help="Overwrite the content of the output directory")
@@ -330,15 +334,15 @@ def main():
                 args.output_dir))
 
     # Setup CUDA, GPU & distributed training
-    device = torch.device("cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.n_gpu = torch.cuda.device_count()
     args.device = device
 
     # Setup logging
-    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                        datefmt='%m/%d/%Y %H:%M:%S',
-                        level=logging.INFO)
-    logger.warning("device: %s, n_gpu: %s", device, args.n_gpu)
+    logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                        datefmt = '%m/%d/%Y %H:%M:%S',
+                        level = logging.INFO)
+    logger.warning("device: %s, n_gpu: %s",device, args.n_gpu)
 
     # Set seed
     set_seed(args)
@@ -353,13 +357,14 @@ def main():
     num_labels = len(label_list)
 
     # Load pretrained model and tokenizer
-
     config_class, model_class, tokenizer_class = BertConfig, BertForSequenceClassification, BertTokenizer
-    config = config_class.from_pretrained("pretrained/cased_L-12_H-768_A-12/bert_config.json", num_labels=num_labels,
+    config = config_class.from_pretrained("./pretrained/bertbase/config.json", num_labels=num_labels,
                                           finetuning_task=args.task_name)
-    tokenizer = tokenizer_class.from_pretrained("pretrained/cased_L-12_H-768_A-12/vocab.txt")
-    model = model_class.from_pretrained("pretrained/bert-base.pt", from_tf=False, config=config)
+    tokenizer = tokenizer_class.from_pretrained("./pretrained/bertbase/")
+    model = model_class.from_pretrained("./pretrained/bertbase/bert-base-uncased-pytorch_model.bin", from_tf=False,
+                                        config=config)
     model.to(args.device)
+
     logger.info("Training/evaluation parameters %s", args)
 
     # Training
@@ -402,9 +407,11 @@ def main():
         logger.info("Evaluate the following checkpoints: %s", checkpoints)
         for checkpoint in checkpoints:
             global_step = checkpoint.split('-')[-1] if len(checkpoints) > 1 else ""
+            prefix = checkpoint.split('/')[-1] if checkpoint.find('checkpoint') != -1 else ""
+
             model = model_class.from_pretrained(checkpoint)
             model.to(args.device)
-            result = evaluate(args, model, tokenizer, prefix=global_step)
+            result = evaluate(args, model, tokenizer, prefix=prefix)
             result = dict((k + '_{}'.format(global_step), v) for k, v in result.items())
             results.update(result)
 
